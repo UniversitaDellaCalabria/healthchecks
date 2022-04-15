@@ -8,46 +8,45 @@
                 <input type="hidden" name="grace" id="update-timeout-grace" />
 
                 <div class="modal-body">
-                    <div class="update-timeout-info text-center">
-                        <span
-                            class="update-timeout-label"
-                            data-toggle="tooltip"
-                            title="Expected time between pings.">
-                            Period
-                        </span>
-                        <span
-                            id="period-slider-value"
-                            class="update-timeout-value">
-                            1 day
-                        </span>
+                    <div class="interval-controls">
+                        <label>Period</label>
+                        <input
+                            id="period-value"
+                            type="number"
+                            min="1"
+                            class="period-input form-control input-lg" />
+                        <select id="period-unit" class="period-input form-control input-lg">
+                            <option value="60">minutes</option>
+                            <option value="3600">hours</option>
+                            <option value="86400">days</option>
+                        </select>
                     </div>
-
                     <div id="period-slider"></div>
 
-                    <div class="update-timeout-info text-center">
-                        <span
-                            class="update-timeout-label"
-                            data-toggle="tooltip"
-                            title="When check is late, how long to wait until an alert is sent">
-                            Grace Time
-                        </span>
-                        <span
-                            id="grace-slider-value"
-                            class="update-timeout-value">
-                            1 day
-                        </span>
+                    <div class="interval-controls">
+                        <label>Grace Time</label>
+                        <input
+                            id="grace-value"
+                            type="number"
+                            min="1"
+                            class="grace-input form-control input-lg" />
+                        <select id="grace-unit" class="grace-input form-control input-lg">
+                            <option value="60">minutes</option>
+                            <option value="3600">hours</option>
+                            <option value="86400">days</option>
+                        </select>
                     </div>
-
                     <div id="grace-slider"></div>
 
                     <div class="update-timeout-terms">
                         <p>
                             <span>Period</span>
-                            Expected time between pings.
+                            – The expected time between pings.
                         </p>
                         <p>
                             <span>Grace Time</span>
-                            When a check is late, how long to wait until an alert is sent.
+                            – When a check is late, <strong>or</strong> has
+                            received a "start" signal, how long to wait to send an alert.
                         </p>
                     </div>
                 </div>
@@ -100,7 +99,7 @@
                         </div>
                         <div class="col-md-4">
                             <div class="form-group">
-                                <label for="cron-grace">Grace Time</label>
+                                <label for="update-timeout-grace-cron">Grace Time</label>
                                 <div class="input-group">
                                     <input
                                         type="number"
@@ -128,7 +127,7 @@
                     </div>
 
                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
-                    <button id="update-cron-submit" type="submit" class="btn btn-primary">
+                    <button id="update-cron-submit" type="submit" class="btn btn-primary" {% if not rw %}disabled{% endif %}>
                         Save
                     </button>
                 </div>

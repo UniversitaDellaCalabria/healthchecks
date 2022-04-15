@@ -1,4 +1,5 @@
 from datetime import timedelta as td
+from unittest.mock import patch
 
 from django.test import Client
 from django.test.utils import override_settings
@@ -7,25 +8,28 @@ from hc.api.models import Check, Flip, Ping
 from hc.test import BaseTestCase
 
 
+@override_settings(S3_BUCKET=None)
 class PingTestCase(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.check = Check.objects.create(project=self.project)
-        self.url = "/ping/%s/" % self.check.code
+        self.url = f"/ping/{self.check.code}"
 
     def test_it_works(self):
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["Access-Control-Allow-Origin"], "*")
 
         self.check.refresh_from_db()
         self.assertEqual(self.check.status, "up")
         expected_aa = self.check.last_ping + td(days=1, hours=1)
         self.assertEqual(self.check.alert_after, expected_aa)
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(ping.scheme, "http")
         self.assertEqual(ping.kind, None)
         self.assertEqual(ping.created, self.check.last_ping)
+        self.assertIsNone(ping.exitstatus)
 
     def test_it_changes_status_of_paused_check(self):
         self.check.status = "paused"
@@ -52,9 +56,9 @@ class PingTestCase(BaseTestCase):
         r = csrf_client.post(self.url, "hello world", content_type="text/plain")
         self.assertEqual(r.status_code, 200)
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(ping.method, "POST")
-        self.assertEqual(ping.body, "hello world")
+        self.assertEqual(bytes(ping.body_raw), b"hello world")
 
     def test_head_works(self):
         csrf_client = Client(enforce_csrf_checks=True)
@@ -74,6 +78,7 @@ class PingTestCase(BaseTestCase):
     def test_it_handles_missing_check(self):
         r = self.client.get("/ping/07c2f548-9850-4b27-af5d-6c9dc157ec02/")
         self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.content.decode(), "not found")
 
     def test_it_handles_120_char_ua(self):
         ua = (
@@ -85,7 +90,7 @@ class PingTestCase(BaseTestCase):
         r = self.client.get(self.url, HTTP_USER_AGENT=ua)
         self.assertEqual(r.status_code, 200)
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(ping.ua, ua)
 
     def test_it_truncates_long_ua(self):
@@ -94,26 +99,27 @@ class PingTestCase(BaseTestCase):
         r = self.client.get(self.url, HTTP_USER_AGENT=ua)
         self.assertEqual(r.status_code, 200)
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(len(ping.ua), 200)
         assert ua.startswith(ping.ua)
 
     def test_it_reads_forwarded_ip(self):
         ip = "1.1.1.1"
         r = self.client.get(self.url, HTTP_X_FORWARDED_FOR=ip)
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(r.status_code, 200)
         self.assertEqual(ping.remote_addr, "1.1.1.1")
 
+    def test_it_reads_first_forwarded_ip(self):
         ip = "1.1.1.1, 2.2.2.2"
         r = self.client.get(self.url, HTTP_X_FORWARDED_FOR=ip, REMOTE_ADDR="3.3.3.3",)
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(r.status_code, 200)
         self.assertEqual(ping.remote_addr, "1.1.1.1")
 
     def test_it_reads_forwarded_protocol(self):
         r = self.client.get(self.url, HTTP_X_FORWARDED_PROTO="https")
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(r.status_code, 200)
         self.assertEqual(ping.scheme, "https")
 
@@ -130,7 +136,7 @@ class PingTestCase(BaseTestCase):
         self.assertTrue(self.check.has_confirmation_link)
 
     def test_fail_endpoint_works(self):
-        r = self.client.get("/ping/%s/fail" % self.check.code)
+        r = self.client.get(self.url + "/fail")
         self.assertEqual(r.status_code, 200)
 
         self.check.refresh_from_db()
@@ -149,7 +155,7 @@ class PingTestCase(BaseTestCase):
         self.check.last_ping = last_ping
         self.check.save()
 
-        r = self.client.get("/ping/%s/start" % self.check.code)
+        r = self.client.get(self.url + "/start")
         self.assertEqual(r.status_code, 200)
 
         self.check.refresh_from_db()
@@ -163,7 +169,7 @@ class PingTestCase(BaseTestCase):
         self.check.status = "paused"
         self.check.save()
 
-        r = self.client.get("/ping/%s/start" % self.check.code)
+        r = self.client.get(self.url + "/start")
         self.assertEqual(r.status_code, 200)
 
         self.check.refresh_from_db()
@@ -191,7 +197,7 @@ class PingTestCase(BaseTestCase):
         self.assertEqual(self.check.status, "new")
         self.assertIsNone(self.check.last_ping)
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(ping.scheme, "http")
         self.assertEqual(ping.kind, "ign")
 
@@ -199,16 +205,16 @@ class PingTestCase(BaseTestCase):
     def test_it_chops_long_body(self):
         self.client.post(self.url, "hello world", content_type="text/plain")
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(ping.method, "POST")
-        self.assertEqual(ping.body, "hello")
+        self.assertEqual(bytes(ping.body_raw), b"hello")
 
     @override_settings(PING_BODY_LIMIT=None)
     def test_it_allows_unlimited_body(self):
         self.client.post(self.url, "A" * 20000, content_type="text/plain")
 
-        ping = Ping.objects.latest("id")
-        self.assertEqual(len(ping.body), 20000)
+        ping = Ping.objects.get()
+        self.assertEqual(len(ping.body_raw), 20000)
 
     def test_it_handles_manual_resume_flag(self):
         self.check.status = "paused"
@@ -221,6 +227,57 @@ class PingTestCase(BaseTestCase):
         self.check.refresh_from_db()
         self.assertEqual(self.check.status, "paused")
 
-        ping = Ping.objects.latest("id")
+        ping = Ping.objects.get()
         self.assertEqual(ping.scheme, "http")
         self.assertEqual(ping.kind, "ign")
+
+    def test_zero_exit_status_works(self):
+        r = self.client.get(self.url + "/0")
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.status, "up")
+
+        ping = Ping.objects.get()
+        self.assertEqual(ping.kind, None)
+        self.assertEqual(ping.exitstatus, 0)
+
+    def test_nonzero_exit_status_works(self):
+        r = self.client.get(self.url + "/123")
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.status, "down")
+
+        ping = Ping.objects.get()
+        self.assertEqual(ping.kind, "fail")
+        self.assertEqual(ping.exitstatus, 123)
+
+    def test_it_rejects_exit_status_over_255(self):
+        r = self.client.get(self.url + "/256")
+        self.assertEqual(r.status_code, 400)
+
+    def test_it_accepts_bad_unicode(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        r = csrf_client.post(self.url, b"Hello \xe9 World", content_type="text/plain")
+        self.assertEqual(r.status_code, 200)
+
+        ping = Ping.objects.get()
+        self.assertEqual(ping.method, "POST")
+        self.assertEqual(bytes(ping.body_raw), b"Hello \xe9 World")
+
+    @override_settings(S3_BUCKET="test-bucket")
+    @patch("hc.api.models.put_object")
+    def test_it_uploads_body_to_s3(self, put_object):
+        r = self.client.post(self.url, b"a" * 101, content_type="text/plain")
+        self.assertEqual(r.status_code, 200)
+
+        ping = Ping.objects.get()
+        self.assertEqual(ping.method, "POST")
+        self.assertEqual(ping.object_size, 101)
+
+        args, kwargs = put_object.call_args
+        code, n, data = args
+        self.assertEqual(code, self.check.code)
+        self.assertEqual(n, 1)
+        self.assertEqual(data, b"a" * 101)

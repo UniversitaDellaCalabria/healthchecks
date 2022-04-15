@@ -1,7 +1,7 @@
 # Management API
 
-SITE_NAME Management API supports listing, creating, updating, pausing and deleting
-checks in user's account.
+With the Management API, you can programmatically manage checks and integrations
+in your account.
 
 ## API Endpoints
 
@@ -16,13 +16,14 @@ Endpoint Name                                         | Endpoint Address
 [Get a list of check's logged pings](#list-pings)     | `GET SITE_ROOT/api/v1/checks/<uuid>/pings/`
 [Get a list of check's status changes](#list-flips)   | `GET SITE_ROOT/api/v1/checks/<uuid>/flips/`<br>`GET SITE_ROOT/api/v1/checks/<unique_key>/flips/`
 [Get a list of existing integrations](#list-channels) | `GET SITE_ROOT/api/v1/channels/`
+[Get project's badges](#list-badges)                  | `GET SITE_ROOT/api/v1/badges/`
 
 ## Authentication
 
 Your requests to SITE_NAME Management API must authenticate using an
-API key. API keys are project-specific, there are no account-wide API keys.
+API key. All API keys are project-specific. There are no account-wide API keys.
 By default, a project on SITE_NAME doesn't have an API key. You can create read-write
-and read-only API keys in the **Project Settings** page.
+and read-only API keys on the **Project Settings** page.
 
 read-write key
 :   Has full access to all documented API endpoints.
@@ -33,24 +34,25 @@ read-only key
     * [Get a list of existing checks](#list-checks)
     * [Get a single check](#get-check)
     * [Get a list of check's status changes](#list-flips)
+    * [Get project's badges](#list-badges)
 
     Omits sensitive information from the API responses. See the documentation of
     individual API endpoints for details.
 
 The client can authenticate itself by including an `X-Api-Key: <your-api-key>`
-header in a HTTP request. Alternatively, for POST requests with a JSON request body,
-the client can include an `api_key` field in the JSON document.
+header in an HTTP request. Alternatively, for POST requests with a JSON request body,
+the client can put an `api_key` field in the JSON document.
 See the [Create a new check](#create-check) section for an example.
 
 ## API Requests
 
-For POST requests, the SITE_NAME API expects request body to be
+For POST requests, the SITE_NAME API expects the request body to be
 a JSON document (*not* a `multipart/form-data` encoded form data).
 
 ## API Responses
 
 SITE_NAME uses HTTP status codes wherever possible.
-In general, 2xx class indicates success, 4xx indicates an client error,
+In general, 2xx class indicates success, 4xx indicates a client error,
 and 5xx indicates a server error.
 
 The response may contain a JSON document with additional data.
@@ -65,7 +67,7 @@ one or more tags.
 ### Query String Parameters
 
 tag=&lt;value&gt;
-:   Filters the checks, and returns only the checks that are tagged with the
+:   Filters the checks and returns only the checks that are tagged with the
     specified value.
 
     This parameter can be repeated multiple times.
@@ -95,6 +97,7 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/
   "checks": [
     {
       "name": "Filesystem Backup",
+      "slug": "filesystem-backup",
       "tags": "backup fs",
       "desc": "Runs incremental backup every hour",
       "grace": 600,
@@ -103,6 +106,7 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/
       "last_ping": "2020-03-24T14:02:03+00:00",
       "next_ping": "2020-03-24T15:02:03+00:00",
       "manual_resume": false,
+      "methods": "",
       "ping_url": "PING_ENDPOINT31365bce-8da9-4729-8ff3-aaa71d56b712",
       "update_url": "SITE_ROOT/api/v1/checks/31365bce-8da9-4729-8ff3-aaa71d56b712",
       "pause_url": "SITE_ROOT/api/v1/checks/31365bce-8da9-4729-8ff3-aaa71d56b712/pause",
@@ -111,6 +115,7 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/
     },
     {
       "name": "Database Backup",
+      "slug": "database-backup",
       "tags": "production db",
       "desc": "Runs ~/db-backup.sh",
       "grace": 1200,
@@ -119,6 +124,7 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/
       "last_ping": "2020-03-23T10:19:32+00:00",
       "next_ping": null,
       "manual_resume": false,
+      "methods": "",
       "ping_url": "PING_ENDPOINT803f680d-e89b-492b-82ef-2be7b774a92d",
       "update_url": "SITE_ROOT/api/v1/checks/803f680d-e89b-492b-82ef-2be7b774a92d",
       "pause_url": "SITE_ROOT/api/v1/checks/803f680d-e89b-492b-82ef-2be7b774a92d/pause",
@@ -130,15 +136,23 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/
 }
 ```
 
-When using the read-only API key, the following fields are omitted:
-`ping_url`, `update_url`, `pause_url`, `channels`.  An extra `unique_key` field
-is added which can be used [to `GET` a check](#get-check) in place of the `UUID`. The `unique_key` identifier is stable across API calls. Example:
+The possible values for the `status` field are: `new`, `started`, `up`, `grace`, `down`,
+and `paused`.
+
+When using the read-only API key, SITE_NAME omits the following fields from responses:
+`ping_url`, `update_url`, `pause_url`, `channels`.  It adds an extra
+`unique_key` field. The `unique_key` identifier is stable across API calls, and
+you can use it in the [Get a single check](#get-check)
+and [Get a list of check's status changes](#list-flips) API calls.
+
+Example:
 
 ```json
 {
   "checks": [
     {
       "name": "Filesystem Backup",
+      "slug": "filesystem-backup",
       "tags": "backup fs",
       "desc": "Runs incremental backup every hour",
       "grace": 600,
@@ -147,11 +161,13 @@ is added which can be used [to `GET` a check](#get-check) in place of the `UUID`
       "last_ping": "2020-03-24T14:02:03+00:00",
       "next_ping": "2020-03-24T15:02:03+00:00",
       "manual_resume": false,
+      "methods": "",
       "unique_key": "a6c7b0a8a66bed0df66abfdab3c77736861703ee",
       "timeout": 3600
     },
     {
       "name": "Database Backup",
+      "slug": "database-backup",
       "tags": "production db",
       "desc": "Runs ~/db-backup.sh",
       "grace": 1200,
@@ -160,6 +176,7 @@ is added which can be used [to `GET` a check](#get-check) in place of the `UUID`
       "last_ping": "2020-03-23T10:19:32+00:00",
       "next_ping": null,
       "manual_resume": false,
+      "methods": "",
       "unique_key": "124f983e0e3dcaeba921cfcef46efd084576e783",
       "schedule": "15 5 * * *",
       "tz": "UTC"
@@ -173,7 +190,7 @@ is added which can be used [to `GET` a check](#get-check) in place of the `UUID`
 `GET SITE_ROOT/api/v1/checks/<unique_key>`
 
 Returns a JSON representation of a single check. Accepts either check's UUID or
-the `unique_key` (a field derived from UUID, and returned by API responses when
+the `unique_key` (a field derived from UUID and returned by API responses when
 using the read-only API key) as an identifier.
 
 ### Response Codes
@@ -202,6 +219,7 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/<uuid>
 ```json
 {
   "name": "Database Backup",
+  "slug": "database-backup",
   "tags": "production db",
   "desc": "Runs ~/db-backup.sh",
   "grace": 1200,
@@ -210,6 +228,7 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/<uuid>
   "last_ping": "2020-03-23T10:19:32+00:00",
   "next_ping": null,
   "manual_resume": false,
+  "methods": "",
   "ping_url": "PING_ENDPOINT803f680d-e89b-492b-82ef-2be7b774a92d",
   "update_url": "SITE_ROOT/api/v1/checks/803f680d-e89b-492b-82ef-2be7b774a92d",
   "pause_url": "SITE_ROOT/api/v1/checks/803f680d-e89b-492b-82ef-2be7b774a92d/pause",
@@ -219,20 +238,23 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/checks/<uuid>
 }
 ```
 
+The possible values for the `status` field are: `new`, `started`, `up`, `grace`, `down`,
+and `paused`.
+
 ### Example Read-Only Response
 
-When using the read-only API key, the following fields are omitted:
-`ping_url`, `update_url`, `pause_url`, `channels`.  An extra `unique_key` field is
-added. This identifier is stable across API calls.
+When using the read-only API key, SITE_NAME omits the following fields from responses:
+`ping_url`, `update_url`, `pause_url`, `channels`.  It adds an extra
+`unique_key` field. This identifier is stable across API calls.
 
-
-Note: the `ping_url`, `update_url` and `pause_url` fields, although omitted, are not
-really secret. The client already knows the check's unique UUID and so can easily
-construct these URLs by itself.
+Note: although API omits the `ping_url`, `update_url`, and `pause_url` in read-only
+API responses, the client can easily construct these URLs themselves *if* they know the
+check's unique UUID.
 
 ```json
 {
   "name": "Database Backup",
+  "slug": "database-backup",
   "tags": "production db",
   "desc": "Runs ~/db-backup.sh",
   "grace": 1200,
@@ -241,6 +263,7 @@ construct these URLs by itself.
   "last_ping": "2020-03-23T10:19:32+00:00",
   "next_ping": null,
   "manual_resume": false,
+  "methods": "",
   "unique_key": "124f983e0e3dcaeba921cfcef46efd084576e783",
   "schedule": "15 5 * * *",
   "tz": "UTC"
@@ -255,9 +278,10 @@ Creates a new check and returns its ping URL.
 All request parameters are optional and will use their default
 values if omitted.
 
-This API call can be used to create both "simple" and "cron" checks.
-To create a "simple" check, specify the "timeout" parameter.
-To create a "cron" check, specify the "schedule" and "tz" parameters.
+With this API call, you can create both Simple and Cron checks:
+
+* To create a Simple check, specify the `timeout` parameter.
+* To create a Cron check, specify the `schedule` and `tz` parameters.
 
 ### Request Parameters
 
@@ -277,33 +301,34 @@ tags
 desc
 :   string, optional.
 
-    Description for the check.
+    Description of the check.
 
 timeout
 :   number, optional, default value: {{ default_timeout }}.
 
-    A number of seconds, the expected period of this check.
+    The expected period of this check in seconds.
 
-    Minimum: 60 (one minute), maximum: 2592000 (30 days).
+    Minimum: 60 (one minute), maximum: 31536000 (365 days).
 
-    Example for 5 minute timeout:
+    Example for a 5-minute timeout:
 
-    <pre>{"kind": "simple", "timeout": 300}</pre>
+    <pre>{"timeout": 300}</pre>
 
 grace
 :   number, optional, default value: {{ default_grace }}.
 
-    A number of seconds, the grace period for this check.
+    The grace period for this check in seconds.
 
-    Minimum: 60 (one minute), maximum: 2592000 (30 days).
+    Minimum: 60 (one minute), maximum: 31536000 (365 days).
 
 schedule
-:   string, optional, default value: "* * * * *".
+:   string, optional, default value: "`* * * * *`".
 
     A cron expression defining this check's schedule.
 
-    If you specify both "timeout" and "schedule" parameters, "timeout" will be
-    ignored and "schedule" will be used.
+    If you specify both `timeout` and `schedule` parameters,
+    SITE_NAME will create a Cron check and ignore
+    the `timeout` value.
 
     Example for a check running every half-hour:
 
@@ -312,8 +337,8 @@ schedule
 tz
 :   string, optional, default value: "UTC".
 
-    Server's timezone. This setting only has effect in combination with the
-    "schedule" parameter.
+    Server's timezone. This setting only has an effect in combination with the
+    `schedule` parameter.
 
     Example:
 
@@ -322,35 +347,69 @@ tz
 manual_resume
 :   boolean, optional, default value: false.
 
-    Controls whether a paused ping resumes automatically when pinged (the default),
+    Controls whether a paused check automatically resumes when pinged (the default)
     or not. If set to false, a paused check will leave the paused state when it receives
-    a ping. If set to true, a paused check will ignore pings and stay paused until it is
-    either manually resumed from the web dashboard or the `manual_resume` flag is
-    changed.
+    a ping. If set to true, a paused check will ignore pings and stay paused until
+    you manually resume it from the web dashboard.
+
+methods
+:   string, optional, default value: "".
+
+    Specifies the allowed HTTP methods for making ping requests.
+    Must be one of the two values: "" (an empty string) or "POST".
+
+    Set this field to "" (an empty string) to allow HEAD, GET,
+    and POST requests.
+
+    Set this field to "POST" to allow only POST requests.
+
+    Example:
+
+    <pre>{"methods": "POST"}</pre>
 
 channels
 :   string, optional
 
-    By default, if a check is created through API, no notification channels
-    (integrations) are assigned to it. So, when the check goes up or down, no
-    notifications will get sent.
+    By default, this API call assigns no integrations to the newly created
+    check.
 
     Set this field to a special value "*" to automatically assign all existing
-    integrations.
+    integrations. Example:
+
+    <pre>{"channels": "*"}</pre>
 
     To assign specific integrations, use a comma-separated list of integration
-    identifiers. Use the [Get a List of Existing Integrations](#list-channels) call to
-    look up integration identifiers.
+    UUIDs. You can look up integration UUIDs using the
+    [Get a List of Existing Integrations](#list-channels) API call.
+
+    Example:
+
+    <pre>{"channels":
+     "4ec5a071-2d08-4baa-898a-eb4eb3cd6941,746a083e-f542-4554-be1a-707ce16d3acc"}</pre>
+
+    Alternatively, if you have named your integrations in SITE_NAME dashboard,
+    you can specify integrations by their names. For this to work, your integrations
+    need non-empty unique names, and they must not contain commas.
+    The names must match exactly, whitespace is significant.
+
+    Example:
+
+    <pre>{"channels": "Email to Alice,SMS to Alice"}</pre>
 
 unique
 :   array of string values, optional, default value: [].
 
-    Before creating a check, look for existing checks, filtered by fields listed
-    in `unique`. If a matching check is found, return it with HTTP status code 200.
-    If no matching check is found, proceed as normal: create a check and return it
-    with HTTP status code 201.
+    Enables "upsert" functionality. Before creating a check, SITE_NAME looks for
+    existing checks, filtered by fields listed in `unique`.
 
-    The accepted values are: `name`, `tags`, `timeout` and `grace`.
+    If SITE_NAME does not find a matching check, it creates a new check and returns it
+    with the HTTP status code 201.
+
+    If SITE_NAME finds a matching check, it updates the existing check and
+    returns it with HTTP status code 200.
+
+    The accepted values for the `unique` field are
+    `name`, `tags`, `timeout`, and `grace`.
 
     Example:
 
@@ -362,10 +421,10 @@ unique
 ### Response Codes
 
 201 Created
-:   The check was successfully created.
+:   A new check was successfully created.
 
 200 OK
-:   The `unique` parameter was used and an existing check was matched.
+:   An existing check was found and updated.
 
 400 Bad Request
 :   The request is not well-formed, violates schema, or uses invalid
@@ -375,7 +434,7 @@ unique
 :   The API key is either missing or invalid.
 
 403 Forbidden
-:   The account's check limit has been reached. For free accounts,
+:   The account has hit its check limit. For free accounts,
     the limit is 20 checks per account.
 
 ### Example Request
@@ -403,8 +462,10 @@ curl SITE_ROOT/api/v1/checks/ \
   "last_ping": null,
   "n_pings": 0,
   "name": "Backups",
+  "slug": "backups",
   "next_ping": null,
   "manual_resume": false,
+  "methods": "",
   "pause_url": "SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc/pause",
   "ping_url": "PING_ENDPOINTf618072a-7bde-4eee-af63-71a77c5723bc",
   "status": "new",
@@ -418,9 +479,8 @@ curl SITE_ROOT/api/v1/checks/ \
 
 `POST SITE_ROOT/api/v1/checks/<uuid>`
 
-Updates an existing check. All request parameters are optional. The check is
-updated only with the supplied request parameters. If any parameter is omitted,
-its value is left unchanged.
+Updates an existing check. All request parameters are optional. If you omit  any
+parameter, SITE_NAME will leave its value unchanged.
 
 ### Request Parameters
 
@@ -441,33 +501,34 @@ tags
 desc
 :   string, optional.
 
-    Description for the check.
+    Description of the check.
 
 timeout
 :   number, optional.
 
-    A number of seconds, the expected period of this check.
+    The expected period of this check in seconds.
 
-    Minimum: 60 (one minute), maximum: 2592000 (30 days).
+    Minimum: 60 (one minute), maximum: 31536000 (365 days).
 
-    Example for 5 minute timeout:
+    Example for a 5-minute timeout:
 
-    <pre>{"kind": "simple", "timeout": 300}</pre>
+    <pre>{"timeout": 300}</pre>
 
 grace
 :   number, optional.
 
-    A number of seconds, the grace period for this check.
+    The grace period for this check in seconds.
 
-    Minimum: 60 (one minute), maximum: 2592000 (30 days).
+    Minimum: 60 (one minute), maximum: 31536000 (365 days).
 
 schedule
 :   string, optional.
 
     A cron expression defining this check's schedule.
 
-    If you specify both "timeout" and "schedule" parameters, "timeout" will be
-    ignored and "schedule" will be used.
+    If you specify both `timeout` and `schedule` parameters,
+    SITE_NAME will save the `schedule` parameter and ignore
+    the `timeout`.
 
     Example for a check running every half-hour:
 
@@ -476,7 +537,7 @@ schedule
 tz
 :   string, optional.
 
-    Server's timezone. This setting only has effect in combination with the
+    Server's timezone. This setting only has an effect in combination with the
     "schedule" parameter.
 
     Example:
@@ -486,27 +547,56 @@ tz
 manual_resume
 :   boolean, optional, default value: false.
 
-    Controls whether a paused ping resumes automatically when pinged (the default),
+    Controls whether a paused ping automatically resumes when pinged (the default),
     or not. If set to false, a paused check will leave the paused state when it receives
-    a ping. If set to true, a paused check will ignore pings and stay paused until it is
-    either manually resumed from the web dashboard or the `manual_resume` flag is
-    changed.
+    a ping. If set to true, a paused check will ignore pings and stay paused until
+    you manually resume it from the web dashboard.
+
+methods
+:   string, optional, default value: "".
+
+    Specifies the allowed HTTP methods for making ping requests.
+    Must be one of the two values: "" (an empty string) or "POST".
+
+    Set this field to "" (an empty string) to allow HEAD, GET,
+    and POST requests.
+
+    Set this field to "POST" to allow only POST requests.
+
+    Example:
+
+    <pre>{"methods": "POST"}</pre>
 
 channels
 :   string, optional.
 
     Set this field to a special value "*" to automatically assign all existing
-    notification channels.
+    integrations. Example:
+
+    <pre>{"channels": "*"}</pre>
 
     Set this field to a special value "" (empty string) to automatically *unassign*
-    all notification channels.
+    all existing integrations. Example:
 
-    Set this field to a comma-separated list of channel identifiers to assign
-    specific notification channels.
+    <pre>{"channels": ""}</pre>
+
+    To assign specific integrations, use a comma-separated list of integration
+    UUIDs. You can look up integration UUIDs using the
+    [Get a List of Existing Integrations](#list-channels) API call.
 
     Example:
 
-    <pre>{"channels": "4ec5a071-2d08-4baa-898a-eb4eb3cd6941,746a083e-f542-4554-be1a-707ce16d3acc"}</pre>
+    <pre>{"channels":
+     "4ec5a071-2d08-4baa-898a-eb4eb3cd6941,746a083e-f542-4554-be1a-707ce16d3acc"}</pre>
+
+    Alternatively, if you have named your integrations in SITE_NAME dashboard,
+    you can specify integrations by their names. For this to work, your integrations
+    need non-empty and unique names, and they must not contain commas. The names
+    must match exactly, whitespace is significant.
+
+    Example:
+
+    <pre>{"channels": "Email to Alice,SMS to Alice"}</pre>
 
 
 ### Response Codes
@@ -553,8 +643,10 @@ curl SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc \
   "last_ping": null,
   "n_pings": 0,
   "name": "Backups",
+  "slug": "backups",
   "next_ping": null,
   "manual_resume": false,
+  "methods": "",
   "pause_url": "SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc/pause",
   "ping_url": "PING_ENDPOINTf618072a-7bde-4eee-af63-71a77c5723bc",
   "status": "new",
@@ -568,7 +660,7 @@ curl SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc \
 
 `POST SITE_ROOT/api/v1/checks/<uuid>/pause`
 
-Disables monitoring for a check, without removing it. The check goes into a "paused"
+Disables monitoring for a check without removing it. The check goes into a "paused"
 state. You can resume monitoring of the check by pinging it.
 
 This API call has no request parameters.
@@ -608,8 +700,10 @@ header is sometimes required by some network proxies and web servers.
   "last_ping": null,
   "n_pings": 0,
   "name": "Backups",
+  "slug": "backups",
   "next_ping": null,
   "manual_resume": false,
+  "methods": "",
   "pause_url": "SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc/pause",
   "ping_url": "PING_ENDPOINTf618072a-7bde-4eee-af63-71a77c5723bc",
   "status": "paused",
@@ -623,7 +717,7 @@ header is sometimes required by some network proxies and web servers.
 
 `DELETE SITE_ROOT/api/v1/checks/<uuid>`
 
-Permanently deletes the check from user's account. Returns JSON representation of the
+Permanently deletes the check from the user's account. Returns JSON representation of the
 check that was just deleted.
 
 This API call has no request parameters.
@@ -659,8 +753,10 @@ curl SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc \
   "last_ping": null,
   "n_pings": 0,
   "name": "Backups",
+  "slug": "backups",
   "next_ping": null,
   "manual_resume": false,
+  "methods": "",
   "pause_url": "SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc/pause",
   "ping_url": "PING_ENDPOINTf618072a-7bde-4eee-af63-71a77c5723bc",
   "status": "new",
@@ -677,7 +773,7 @@ curl SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc \
 Returns a list of pings this check has received.
 
 This endpoint returns pings in reverse order (most recent first), and the total
-number of returned pings depends on account's billing plan: 100 for free accounts,
+number of returned pings depends on the account's billing plan: 100 for free accounts,
 1000 for paid accounts.
 
 ### Response Codes
@@ -755,7 +851,7 @@ curl SITE_ROOT/api/v1/checks/f618072a-7bde-4eee-af63-71a77c5723bc/pings/ \
 `GET SITE_ROOT/api/v1/checks/<unique_key>/flips/`
 
 Returns a list of "flips" this check has experienced. A flip is a change of status
-(from "down" to "up", or from "up" to "down").
+(from "down" to "up," or from "up" to "down").
 
 ### Query String Parameters
 
@@ -862,3 +958,80 @@ curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/channels/
   ]
 }
 ```
+
+## Get Project's Badges {: #list-badges .rule }
+
+`GET SITE_ROOT/api/v1/badges/`
+
+Returns a map of all tags in the project, with badge URLs for each tag. SITE_NAME
+provides badges in a few different formats:
+
+* `svg`: returns the badge as a SVG document.
+* `json`: returns a JSON document which you can use to generate a custom badge
+    yourself.
+* `shields`: returns JSON in a [Shields.io compatible format](https://shields.io/endpoint).
+
+In addition, badges have 2-state and 3-state variations:
+
+* `svg`, `json`, `shields`: reports two states: "up" and "down". It
+    considers any checks in the grace period as still "up".
+* `svg3`, `json3`, `shields3`: reports three states: "up", "late", and "down".
+
+The response includes a special `*` entry: this pseudo-tag reports the overal status
+of all checks in the project.
+
+### Response Codes
+
+200 OK
+:   The request succeeded.
+
+401 Unauthorized
+:   The API key is either missing or invalid.
+
+### Example Request
+
+```bash
+curl --header "X-Api-Key: your-api-key" SITE_ROOT/api/v1/badges/
+```
+
+### Example Response
+
+```json
+{
+  "badges": {
+    "backup": {
+      "svg": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/LOegDs5M-2/backup.svg",
+      "svg3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/LOegDs5M/backup.svg",
+      "json": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/LOegDs5M-2/backup.json",
+      "json3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/LOegDs5M/backup.json",
+      "shields": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/LOegDs5M-2/backup.shields",
+      "shields3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/LOegDs5M/backup.shields"
+    },
+    "db": {
+      "svg": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/99MuQaKm-2/db.svg",
+      "svg3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/99MuQaKm/db.svg",
+      "json": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/99MuQaKm-2/db.json",
+      "json3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/99MuQaKm/db.json",
+      "shields": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/99MuQaKm-2/db.shields",
+      "shields3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/99MuQaKm/db.shields"
+    },
+    "prod": {
+      "svg": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/1TEhqie8-2/prod.svg",
+      "svg3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/1TEhqie8/prod.svg",
+      "json": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/1TEhqie8-2/prod.json",
+      "json3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/1TEhqie8/prod.json",
+      "shields": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/1TEhqie8-2/prod.shields",
+      "shields3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/1TEhqie8/prod.shields"
+    },
+    "*": {
+      "svg": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/9X7kcZoe-2.svg",
+      "svg3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/9X7kcZoe.svg",
+      "json": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/9X7kcZoe-2.json",
+      "json3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/9X7kcZoe.json",
+      "shields": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/9X7kcZoe-2.shields",
+      "shields3": "SITE_ROOT/badge/67541b37-8b9c-4d17-b952-690eae/9X7kcZoe.shields"
+    }
+  }
+}
+```
+

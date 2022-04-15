@@ -1,9 +1,14 @@
 cron-descriptor==1.2.24
 croniter==0.3.31
-Django>3,<4
-django-compressor==2.4
-pytz==2020.1
-requests==2.23.0
-statsd==3.3.0
-
 djangosaml2>=1.0.1
+# cronsim==2.0
+Django==4.0.4
+django-compressor==3.1
+fido2==0.9.3
+psycopg2==2.9.3
+pyotp==2.6.0
+requests==2.27.1
+segno==1.4.1
+statsd==3.3.0
+whitenoise==6.0.0
+

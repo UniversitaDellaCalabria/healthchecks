@@ -4,37 +4,44 @@
     font-size: 28px;
 }
 
-#subscription-status form {
-    display: inline-block;
-}
-
 .panel.plan h1 {
     font-size: 24px;
     font-weight: bold;
 
     display: inline-block;
     line-height: 0.9;
-    text-shadow: 0px 1px white, -1px 1px white, 1px 1px white, -1px 0px white;
+    text-shadow: 0px 1px var(--panel-bg), -1px 1px var(--panel-bg), 1px 1px var(--panel-bg), -1px 0px var(--panel-bg);
+}
+
+.panel.plan ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.panel.plan li {
+    border-top: 1px solid var(--border-color);
+    padding: 10px 8px;
 }
 
 .hobbyist h1 {
-    color: #0a220c;
-    border-bottom: 3px solid #A5D6A7;
+    color: var(--plan-hobbyist-color);
+    border-bottom: 3px solid var(--plan-hobbyist-border);
 }
 
 .supporter h1 {
-    color: #1d190f;
-    border-bottom: 3px solid #FFE082;
+    color: var(--plan-supporter-color);
+    border-bottom: 3px solid var(--plan-supporter-border);
 }
 
 .business h1 {
-    color: #141c22;
-    border-bottom: 3px solid #90CAF9;
+    color: var(--plan-business-color);
+    border-bottom: 3px solid var(--plan-business-border);
 }
 
 .business-plus h1 {
-    color: #221f1e;
-    border-bottom: 3px solid #BCAAA4;
+    color: var(--plan-business-plus-color);
+    border-bottom: 3px solid var(--plan-business-plus-border);
 }
 
 .mo {
@@ -56,15 +63,6 @@
     color: #fff;
     background: #22bc66;
     border-color: #22bc66;
-}
-
-.plan .list-group-item {
-    padding: 10px 8px;
-}
-
-.plan .list-group-item:last-child {
-    border-bottom: 0;
-
 }
 
 .error-message {
@@ -92,11 +90,12 @@
 
 #plans .panel-footer {
     background: transparent;
+    border-top: 0;
 }
 
 #annual-note {
     margin: 10px 0;
-    color: #AAA;
+    color: var(--text-muted);
 }
 
 .page-pricing span[data-help] {

@@ -1,18 +1,26 @@
 from datetime import timedelta as td
 import json
+import re
 from urllib.parse import quote, urlencode
 
 from django import forms
 from django.forms import URLField
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
 from hc.front.validators import (
     CronExpressionValidator,
     TimezoneValidator,
     WebhookValidator,
 )
 import requests
+
+
+def _is_latin1(s):
+    try:
+        s.encode("latin-1")
+        return True
+    except UnicodeError:
+        return False
 
 
 class HeadersField(forms.Field):
@@ -34,6 +42,11 @@ class HeadersField(forms.Field):
             n, v = n.strip(), v.strip()
             if not n or not v:
                 raise ValidationError(message=self.message)
+
+            if not _is_latin1(n):
+                raise ValidationError(
+                    message="Header names must not contain special characters"
+                )
 
             headers[n] = v
 
@@ -63,14 +76,28 @@ class NameTagsForm(forms.Form):
 
 
 class FilteringRulesForm(forms.Form):
-    subject = forms.CharField(required=False, max_length=100)
+    filter_by_subject = forms.ChoiceField(choices=(("no", "no"), ("yes", "yes")))
+    subject = forms.CharField(required=False, max_length=200)
+    subject_fail = forms.CharField(required=False, max_length=200)
     methods = forms.ChoiceField(required=False, choices=(("", "Any"), ("POST", "POST")))
     manual_resume = forms.BooleanField(required=False)
 
+    def clean_subject(self):
+        if self.cleaned_data["filter_by_subject"] == "yes":
+            return self.cleaned_data["subject"]
+
+        return ""
+
+    def clean_subject_fail(self):
+        if self.cleaned_data["filter_by_subject"] == "yes":
+            return self.cleaned_data["subject_fail"]
+
+        return ""
+
 
 class TimeoutForm(forms.Form):
-    timeout = forms.IntegerField(min_value=60, max_value=2592000)
-    grace = forms.IntegerField(min_value=60, max_value=2592000)
+    timeout = forms.IntegerField(min_value=60, max_value=31536000)
+    grace = forms.IntegerField(min_value=60, max_value=31536000)
 
     def clean_timeout(self):
         return td(seconds=self.cleaned_data["timeout"])
@@ -85,7 +112,7 @@ class CronForm(forms.Form):
     grace = forms.IntegerField(min_value=1, max_value=43200)
 
 
-class AddOpsGenieForm(forms.Form):
+class AddOpsgenieForm(forms.Form):
     error_css_class = "has-error"
     region = forms.ChoiceField(initial="us", choices=(("us", "US"), ("eu", "EU")))
     key = forms.CharField(max_length=40)
@@ -113,7 +140,7 @@ class AddPushoverForm(forms.Form):
         return "%s|%s|%s" % (key, prio, prio_up)
 
 
-class AddEmailForm(forms.Form):
+class EmailForm(forms.Form):
     error_css_class = "has-error"
     value = forms.EmailField(max_length=100)
     down = forms.BooleanField(required=False, initial=True)
@@ -127,6 +154,9 @@ class AddEmailForm(forms.Form):
 
         if not down and not up:
             self.add_error("down", "Please select at least one.")
+
+    def get_value(self):
+        return json.dumps(dict(self.cleaned_data), sort_keys=True)
 
 
 class AddUrlForm(forms.Form):
@@ -179,17 +209,46 @@ class AddShellForm(forms.Form):
         return json.dumps(dict(self.cleaned_data), sort_keys=True)
 
 
-phone_validator = RegexValidator(
-    regex="^\+\d{5,15}$", message="Invalid phone number format."
-)
-
-
-class AddSmsForm(forms.Form):
+class PhoneNumberForm(forms.Form):
     error_css_class = "has-error"
     label = forms.CharField(max_length=100, required=False)
-    value = forms.CharField(max_length=16, validators=[phone_validator])
-    down = forms.BooleanField(required=False, initial=True)
+    phone = forms.CharField()
+
+    def clean_phone(self):
+        v = self.cleaned_data["phone"]
+
+        stripped = v.encode("ascii", "ignore").decode("ascii")
+        stripped = stripped.replace(" ", "").replace("-", "")
+        if not re.match(r"^\+\d{5,15}$", stripped):
+            raise forms.ValidationError("Invalid phone number format.")
+
+        return stripped
+
+    def get_json(self):
+        return json.dumps({"value": self.cleaned_data["phone"]})
+
+
+class PhoneUpDownForm(PhoneNumberForm):
     up = forms.BooleanField(required=False, initial=True)
+    down = forms.BooleanField(required=False, initial=True)
+
+    def clean(self):
+        super().clean()
+
+        down = self.cleaned_data.get("down")
+        up = self.cleaned_data.get("up")
+
+        if not down and not up:
+            self.add_error("down", "Please select at least one.")
+
+    def get_json(self):
+        return json.dumps(
+            {
+                "value": self.cleaned_data["phone"],
+                "up": self.cleaned_data["up"],
+                "down": self.cleaned_data["down"],
+            }
+        )
 
 
 class ChannelNameForm(forms.Form):
@@ -211,6 +270,11 @@ class AddMatrixForm(forms.Form):
         if r.status_code == 429:
             raise forms.ValidationError(
                 "Matrix server returned status code 429 (Too Many Requests), "
+                "please try again later."
+            )
+        if r.status_code == 502:
+            raise forms.ValidationError(
+                "Matrix server returned status code 502 (Bad Gateway), "
                 "please try again later."
             )
 
@@ -240,8 +304,19 @@ class AddZulipForm(forms.Form):
     error_css_class = "has-error"
     bot_email = forms.EmailField(max_length=100)
     api_key = forms.CharField(max_length=50)
+    site = forms.URLField(max_length=100, validators=[WebhookValidator()])
     mtype = forms.ChoiceField(choices=ZULIP_TARGETS)
     to = forms.CharField(max_length=100)
+
+    def get_value(self):
+        return json.dumps(dict(self.cleaned_data), sort_keys=True)
+
+
+class AddTrelloForm(forms.Form):
+    token = forms.RegexField(regex=r"^[0-9a-fA-F]{64}$")
+    board_name = forms.CharField(max_length=100)
+    list_name = forms.CharField(max_length=100)
+    list_id = forms.RegexField(regex=r"^[0-9a-fA-F]{16,32}$")
 
     def get_value(self):
         return json.dumps(dict(self.cleaned_data), sort_keys=True)

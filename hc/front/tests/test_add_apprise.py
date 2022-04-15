@@ -6,7 +6,7 @@ from django.test.utils import override_settings
 @override_settings(APPRISE_ENABLED=True)
 class AddAppriseTestCase(BaseTestCase):
     def setUp(self):
-        super(AddAppriseTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_apprise/" % self.project.code
 
     def test_instructions_work(self):
@@ -31,3 +31,11 @@ class AddAppriseTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 404)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

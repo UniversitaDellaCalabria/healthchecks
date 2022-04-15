@@ -8,7 +8,7 @@ from hc.test import BaseTestCase
 )
 class AddPushoverTestCase(BaseTestCase):
     def setUp(self):
-        super(AddPushoverTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_pushover/" % self.project.code
 
     @override_settings(PUSHOVER_API_TOKEN=None)
@@ -78,4 +78,12 @@ class AddPushoverTestCase(BaseTestCase):
 
         params = "?pushover_user_key=a&state=INVALID&prio=0"
         r = self.client.get(self.url + params)
+        self.assertEqual(r.status_code, 403)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
         self.assertEqual(r.status_code, 403)

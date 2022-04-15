@@ -5,7 +5,7 @@ from hc.test import BaseTestCase
 
 class SwitchChannelTestCase(BaseTestCase):
     def setUp(self):
-        super(SwitchChannelTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
 
         self.channel = Channel(project=self.project, kind="email")
@@ -51,3 +51,11 @@ class SwitchChannelTestCase(BaseTestCase):
         self.client.login(username="bob@example.org", password="password")
         r = self.client.post(self.url, {"state": "on"})
         self.assertEqual(r.status_code, 200)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.url, {"state": "on"})
+        self.assertEqual(r.status_code, 403)

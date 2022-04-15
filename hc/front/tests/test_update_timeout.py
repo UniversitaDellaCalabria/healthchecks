@@ -7,7 +7,7 @@ from hc.test import BaseTestCase
 
 class UpdateTimeoutTestCase(BaseTestCase):
     def setUp(self):
-        super(UpdateTimeoutTestCase, self).setUp()
+        super().setUp()
         self.check = Check(project=self.project, status="up")
         self.check.last_ping = timezone.now()
         self.check.save()
@@ -74,7 +74,7 @@ class UpdateTimeoutTestCase(BaseTestCase):
 
     def test_it_validates_cron_expression(self):
         self.client.login(username="alice@example.org", password="password")
-        samples = ["* invalid *", "1,2 3,* * * *", "0 0 31 2 *"]
+        samples = ["* invalid *", "1,2 61 * * *", "0 0 31 2 *"]
 
         for sample in samples:
             payload = {"kind": "cron", "schedule": sample, "tz": "UTC", "grace": 60}
@@ -180,3 +180,13 @@ class UpdateTimeoutTestCase(BaseTestCase):
         self.client.login(username="bob@example.org", password="password")
         r = self.client.post(self.url, data=payload)
         self.assertRedirects(r, self.redirect_url)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        payload = {"kind": "simple", "timeout": 3600, "grace": 60}
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.url, data=payload)
+        self.assertEqual(r.status_code, 403)

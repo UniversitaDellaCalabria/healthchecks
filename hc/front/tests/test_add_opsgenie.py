@@ -1,18 +1,19 @@
 import json
 
+from django.test.utils import override_settings
 from hc.api.models import Channel
 from hc.test import BaseTestCase
 
 
-class AddOpsGenieTestCase(BaseTestCase):
+class AddOpsgenieTestCase(BaseTestCase):
     def setUp(self):
-        super(AddOpsGenieTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_opsgenie/" % self.project.code
 
     def test_instructions_work(self):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
-        self.assertContains(r, "escalation policies and incident tracking")
+        self.assertContains(r, "escalation policies, and incident tracking")
 
     def test_it_works(self):
         form = {"key": "123456", "region": "us"}
@@ -48,3 +49,17 @@ class AddOpsGenieTestCase(BaseTestCase):
         c = Channel.objects.get()
         payload = json.loads(c.value)
         self.assertEqual(payload["region"], "eu")
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)
+
+    @override_settings(OPSGENIE_ENABLED=False)
+    def test_it_handles_disabled_integration(self):
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 404)

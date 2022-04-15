@@ -5,7 +5,7 @@ from hc.test import BaseTestCase
 @override_settings(DISCORD_CLIENT_ID="t1", DISCORD_CLIENT_SECRET="s1")
 class AddDiscordTestCase(BaseTestCase):
     def setUp(self):
-        super(AddDiscordTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_discord/" % self.project.code
 
     def test_instructions_work(self):
@@ -22,3 +22,11 @@ class AddDiscordTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 404)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

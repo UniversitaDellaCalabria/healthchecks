@@ -1,8 +1,14 @@
+import base64
+import binascii
 from datetime import timedelta as td
+
 from django import forms
+from django.core.exceptions import ValidationError
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from hc.accounts.models import REPORT_CHOICES, Member
 from hc.api.models import TokenBucket
+from hc.lib.tz import all_timezones
 
 
 class LowercaseEmailField(forms.EmailField):
@@ -11,21 +17,45 @@ class LowercaseEmailField(forms.EmailField):
         return value.lower()
 
 
-class AvailableEmailForm(forms.Form):
+class Base64Field(forms.CharField):
+    def to_python(self, value):
+        if value is None:
+            return None
+
+        try:
+            return base64.b64decode(value.encode())
+        except binascii.Error:
+            raise ValidationError(message="Cannot decode base64")
+
+
+class SignupForm(forms.Form):
     # Call it "identity" instead of "email"
     # to avoid some of the dumber bots
     identity = LowercaseEmailField(
         error_messages={"required": "Please enter your email address."}
     )
+    tz = forms.CharField(required=False)
 
     def clean_identity(self):
         v = self.cleaned_data["identity"]
+        if len(v) > 254:
+            raise forms.ValidationError("Address is too long.")
+
         if User.objects.filter(email=v).exists():
             raise forms.ValidationError(
                 "An account with this email address already exists."
             )
 
         return v
+
+    def clean_tz(self):
+        # Declare tz as "clean" only if we can find it in hc.lib.tz.all_timezones
+        if self.cleaned_data["tz"] in all_timezones:
+            return self.cleaned_data["tz"]
+
+        # Otherwise, return None, and *don't* throw a validation exception:
+        # If user's browser reports a timezone we don't recognize, we
+        # should ignore the timezone but still save the rest of the form.
 
 
 class EmailLoginForm(forms.Form):
@@ -41,7 +71,7 @@ class EmailLoginForm(forms.Form):
         try:
             self.user = User.objects.get(email=v)
         except User.DoesNotExist:
-            raise forms.ValidationError("Incorrect email address.")
+            raise forms.ValidationError("Unknown email address.")
 
         return v
 
@@ -66,8 +96,9 @@ class PasswordLoginForm(forms.Form):
 
 
 class ReportSettingsForm(forms.Form):
-    reports_allowed = forms.BooleanField(required=False)
+    reports = forms.ChoiceField(choices=REPORT_CHOICES)
     nag_period = forms.IntegerField(min_value=0, max_value=86400)
+    tz = forms.CharField()
 
     def clean_nag_period(self):
         seconds = self.cleaned_data["nag_period"]
@@ -76,6 +107,15 @@ class ReportSettingsForm(forms.Form):
             raise forms.ValidationError("Bad nag_period: %d" % seconds)
 
         return td(seconds=seconds)
+
+    def clean_tz(self):
+        # Declare tz as "clean" only if we can find it in hc.lib.tz.all_timezones
+        if self.cleaned_data["tz"] in all_timezones:
+            return self.cleaned_data["tz"]
+
+        # Otherwise, return None, and *don't* throw a validation exception:
+        # If user's browser reports a timezone we don't recognize, we
+        # should ignore the timezone but still save the rest of the form.
 
 
 class SetPasswordForm(forms.Form):
@@ -95,7 +135,8 @@ class ChangeEmailForm(forms.Form):
 
 
 class InviteTeamMemberForm(forms.Form):
-    email = LowercaseEmailField()
+    email = LowercaseEmailField(max_length=254)
+    role = forms.ChoiceField(choices=Member.Role.choices)
 
 
 class RemoveTeamMemberForm(forms.Form):
@@ -103,8 +144,36 @@ class RemoveTeamMemberForm(forms.Form):
 
 
 class ProjectNameForm(forms.Form):
-    name = forms.CharField(max_length=200, required=True)
+    name = forms.CharField(max_length=60)
 
 
 class TransferForm(forms.Form):
     email = LowercaseEmailField()
+
+
+class AddWebAuthnForm(forms.Form):
+    name = forms.CharField(max_length=100)
+    client_data_json = Base64Field()
+    attestation_object = Base64Field()
+
+
+class WebAuthnForm(forms.Form):
+    credential_id = Base64Field()
+    client_data_json = Base64Field()
+    authenticator_data = Base64Field()
+    signature = Base64Field()
+
+
+class TotpForm(forms.Form):
+    error_css_class = "has-error"
+    code = forms.RegexField(regex=r"^\d{6}$")
+
+    def __init__(self, totp, post=None, files=None):
+        self.totp = totp
+        super(TotpForm, self).__init__(post, files)
+
+    def clean_code(self):
+        if not self.totp.verify(self.cleaned_data["code"], valid_window=1):
+            raise forms.ValidationError("The code you entered was incorrect.")
+
+        return self.cleaned_data["code"]

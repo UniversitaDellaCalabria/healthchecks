@@ -5,7 +5,7 @@ from hc.test import BaseTestCase
 
 class UpdateChannelTestCase(BaseTestCase):
     def setUp(self):
-        super(UpdateChannelTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
         self.channel = Channel.objects.create(project=self.project, kind="email")
 
@@ -70,3 +70,13 @@ class UpdateChannelTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.post(self.channels_url, data=payload)
         self.assertEqual(r.status_code, 400)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        payload = {"channel": self.channel.code}
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.channels_url, data=payload)
+        self.assertEqual(r.status_code, 403)

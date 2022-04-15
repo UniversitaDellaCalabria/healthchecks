@@ -8,7 +8,7 @@ from hc.test import BaseTestCase
 
 class SendTestNotificationTestCase(BaseTestCase):
     def setUp(self):
-        super(SendTestNotificationTestCase, self).setUp()
+        super().setUp()
         self.channel = Channel(kind="email", project=self.project)
         self.channel.email_verified = True
         self.channel.value = "alice@example.org"
@@ -28,8 +28,12 @@ class SendTestNotificationTestCase(BaseTestCase):
 
         email = mail.outbox[0]
         self.assertEqual(email.to[0], "alice@example.org")
-        self.assertTrue("X-Bounce-Url" in email.extra_headers)
+        self.assertTrue("X-Status-Url" in email.extra_headers)
         self.assertTrue("List-Unsubscribe" in email.extra_headers)
+
+        # It should update self.channel.last_notify
+        self.channel.refresh_from_db()
+        self.assertIsNotNone(self.channel.last_notify)
 
         # It should create a notification
         n = Notification.objects.get()

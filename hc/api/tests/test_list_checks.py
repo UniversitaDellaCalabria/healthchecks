@@ -1,4 +1,3 @@
-import json
 from datetime import timedelta as td
 from django.utils.timezone import now
 from django.conf import settings
@@ -9,7 +8,7 @@ from hc.test import BaseTestCase
 
 class ListChecksTestCase(BaseTestCase):
     def setUp(self):
-        super(ListChecksTestCase, self).setUp()
+        super().setUp()
 
         self.now = now().replace(microsecond=0)
 
@@ -37,7 +36,13 @@ class ListChecksTestCase(BaseTestCase):
         return self.client.get("/api/v1/checks/", HTTP_X_API_KEY="X" * 32)
 
     def test_it_works(self):
-        r = self.get()
+        # Expect 3 queries:
+        # * check API key
+        # * retrieve checks
+        # * retrieve  channel codes
+        with self.assertNumQueries(3):
+            r = self.get()
+
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Access-Control-Allow-Origin"], "*")
 
@@ -87,15 +92,6 @@ class ListChecksTestCase(BaseTestCase):
         self.assertEqual(len(data["checks"]), 2)
         for check in data["checks"]:
             self.assertNotEqual(check["name"], "Bob 1")
-
-    def test_it_accepts_api_key_from_request_body(self):
-        payload = json.dumps({"api_key": "X" * 32})
-        r = self.client.generic(
-            "GET", "/api/v1/checks/", payload, content_type="application/json"
-        )
-
-        self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "Alice")
 
     def test_it_works_with_tags_param(self):
         r = self.client.get("/api/v1/checks/?tag=a2-tag", HTTP_X_API_KEY="X" * 32)
@@ -148,7 +144,10 @@ class ListChecksTestCase(BaseTestCase):
         self.project.api_key_readonly = "R" * 32
         self.project.save()
 
-        r = self.client.get("/api/v1/checks/", HTTP_X_API_KEY="R" * 32)
+        # Expect a query to check the API key, and a query to retrieve checks
+        with self.assertNumQueries(2):
+            r = self.client.get("/api/v1/checks/", HTTP_X_API_KEY="R" * 32)
+
         self.assertEqual(r.status_code, 200)
 
         # When using readonly keys, the ping URLs should not be exposed:

@@ -1,10 +1,8 @@
 $(function() {
 
     $(".member-remove").click(function() {
-        var $this = $(this);
-
-        $("#rtm-email").text($this.data("email"));
-        $("#remove-team-member-email").val($this.data("email"));
+        $("#rtm-email").text(this.dataset.email);
+        $("#remove-team-member-email").val(this.dataset.email);
         $('#remove-team-member-modal').modal("show");
 
         return false;
@@ -20,7 +18,8 @@ $(function() {
 
     $(".add-to-team").click(function() {
         $("#itm-email").val(this.dataset.email);
-        $("#invite-team-member-modal form").submit();
+        $("#itm-email-display").text(this.dataset.email);
+        $("#invite-team-member-modal").modal("show");
         return false;
     });
 
@@ -29,5 +28,17 @@ $(function() {
     $("#new-owner").on("change", function() {
         $("#transfer-confirm").prop("disabled", !this.value);
     });
+
+    $("a[data-revoke-key]").click(function() {
+        $("#revoke-key-type").val(this.dataset.revokeKey);
+        $("#revoke-key-modal .name").text(this.dataset.name);
+        $("#revoke-key-modal").modal("show");
+    })
+
+    $("a[data-create-key]").click(function() {
+        $("#create-key-type").val(this.dataset.createKey);
+        $("#create-key-form").submit();
+    })
+
 
 });

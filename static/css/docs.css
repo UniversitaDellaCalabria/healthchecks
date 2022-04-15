@@ -10,7 +10,7 @@
 }
 
 .docs-nav li.nav-header {
-    color: #333;
+    color: var(--text-color);
     font-weight: bold;
 }
 
@@ -22,22 +22,14 @@ li + li.nav-header {
     font-weight: bold;
 }
 
-.curl-opts th {
-    white-space: nowrap;
-    font-family: monospace;
-}
-
 h2.rule {
-    border-top: 3px solid #eee;
+    border-top: 3px solid var(--border-muted);
     margin-top: 30px;
     padding-top: 30px;
 }
 
 .page-docs code {
-    padding: 2px 4px;
-    font-size: 90%;
-    color: #333;
-    background-color: #f5f5f5;
+    background: var(--pre-bg);
     border-radius: 4px;
 }
 
@@ -79,7 +71,7 @@ h2.rule {
 
 .docs-content img {
     max-width: 66%;
-    border: 6px solid #DDD;
+    border: 6px solid var(--border-color);
 }
 
 
@@ -89,18 +81,21 @@ h2.rule {
     }
 }
 
-.docs-api table {
+.docs-api table,
+.docs-http_api table {
     width: 100%;
     margin: 8px 0;
 }
 
-.docs-api th {
+.docs-api th,
+.docs-http_api th {
     display: none;
 }
 
-.docs-api td {
+.docs-api td,
+.docs-http_api td {
     padding: 8px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-color);
 }
 
 
@@ -109,18 +104,31 @@ h2.rule {
     grid-template-columns: 150px auto;
 }
 
+.page-docs .docs-http_api dl {
+    grid-template-columns: 220px auto;
+}
+
 .page-docs dt {
     font-weight: normal;
     font-family: "Lucida Console", Monaco, monospace;
 }
 
 .page-docs dt, .page-docs dd {
-    border-top: 1px solid #DDD;
+    border-top: 1px solid var(--border-color);
     padding: 8px 0;
+    line-height: 1.8;
 }
 
 .rule + p code {
     font-size: 14px;
     font-weight: bold;
     padding: 2px 4px;
+}
+
+.docs-introduction dl {
+    grid-template-columns: 48px auto;
+}
+
+.docs-introduction dt {
+    text-align: center;
 }

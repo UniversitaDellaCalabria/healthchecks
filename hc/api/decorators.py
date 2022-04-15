@@ -16,8 +16,10 @@ def authorize(f):
     def wrapper(request, *args, **kwds):
         if "HTTP_X_API_KEY" in request.META:
             api_key = request.META["HTTP_X_API_KEY"]
-        else:
+        elif hasattr(request, "json"):
             api_key = str(request.json.get("api_key", ""))
+        else:
+            api_key = ""
 
         if len(api_key) != 32:
             return error("missing api key", 401)
@@ -38,8 +40,10 @@ def authorize_read(f):
     def wrapper(request, *args, **kwds):
         if "HTTP_X_API_KEY" in request.META:
             api_key = request.META["HTTP_X_API_KEY"]
-        else:
+        elif hasattr(request, "json"):
             api_key = str(request.json.get("api_key", ""))
+        else:
+            api_key = ""
 
         if len(api_key) != 32:
             return error("missing api key", 401)
@@ -57,19 +61,19 @@ def authorize_read(f):
     return wrapper
 
 
-def validate_json(schema=None):
+def validate_json(schema={"type": "object"}):
     """ Parse request json and validate it against `schema`.
 
     Put the parsed result in `request.json`.
-    If schema is None then only parse and don't validate.
-    Supports  a limited subset of JSON schema spec.
+    If schema is None then only parse and check if the root
+    element is a dict. Supports  a limited subset of JSON schema spec.
 
     """
 
     def decorator(f):
         @wraps(f)
         def wrapper(request, *args, **kwds):
-            if request.body:
+            if request.method == "POST" and request.body:
                 try:
                     request.json = json.loads(request.body.decode())
                 except ValueError:
@@ -77,11 +81,10 @@ def validate_json(schema=None):
             else:
                 request.json = {}
 
-            if schema:
-                try:
-                    validate(request.json, schema)
-                except ValidationError as e:
-                    return error("json validation error: %s" % e)
+            try:
+                validate(request.json, schema)
+            except ValidationError as e:
+                return error("json validation error: %s" % e)
 
             return f(request, *args, **kwds)
 

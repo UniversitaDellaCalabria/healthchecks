@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.core.paginator import Paginator
 from django.db import connection
-from django.db.models import Count, F
+from django.db.models import F
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
@@ -55,6 +55,7 @@ class ChecksAdmin(admin.ModelAdmin):
 
         return s
 
+    @admin.display(description="Schedule")
     def timeout_schedule(self, obj):
         if obj.kind == "simple":
             return format_duration(obj.timeout)
@@ -63,16 +64,13 @@ class ChecksAdmin(admin.ModelAdmin):
         else:
             return "Unknown"
 
-    timeout_schedule.short_description = "Schedule"
-
+    @admin.action(description="Send Alert")
     def send_alert(self, request, qs):
         for check in qs:
             for channel in check.channel_set.all():
                 channel.notify(check)
 
         self.message_user(request, "%d alert(s) sent" % qs.count())
-
-    send_alert.short_description = "Send Alert"
 
 
 class SchemeListFilter(admin.SimpleListFilter):
@@ -162,7 +160,7 @@ class PingsAdmin(admin.ModelAdmin):
     search_fields = ("owner__name", "owner__code")
     readonly_fields = ("owner",)
     list_select_related = ("owner",)
-    list_display = ("id", "created", "owner", "scheme", "method", "ua")
+    list_display = ("id", "created", "owner", "scheme", "method", "object_size", "ua")
     list_filter = ("created", SchemeListFilter, MethodListFilter, KindListFilter)
 
     paginator = LargeTablePaginator
@@ -174,14 +172,15 @@ class ChannelsAdmin(admin.ModelAdmin):
     class Media:
         css = {"all": ("css/admin/channels.css",)}
 
-    search_fields = ["value", "project__owner__email"]
+    search_fields = ["value", "project__owner__email", "name"]
     list_display = (
         "id",
-        "kind_",
+        "transport",
         "name",
         "project_",
-        "value",
-        "num_notifications",
+        "created",
+        "chopped_value",
+        "ok",
     )
     list_filter = ("kind",)
     raw_id_fields = ("project", "checks")
@@ -195,33 +194,45 @@ class ChannelsAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        qs = qs.annotate(Count("notification", distinct=True))
         qs = qs.annotate(project_code=F("project__code"))
         qs = qs.annotate(project_name=F("project__name"))
         qs = qs.annotate(email=F("project__owner__email"))
         return qs
 
     @mark_safe
-    def kind_(self, obj):
-        return f'<span class="icon-{ obj.kind }"></span> &nbsp; {obj.kind}'
+    def transport(self, obj):
+        note = ""
+        if obj.kind == "email" and not obj.email_verified:
+            note = " (not verified)"
 
-    def num_notifications(self, obj):
-        return obj.notification__count
+        return f'<span class="ic-{ obj.kind }"></span> &nbsp; {obj.kind}{note}'
 
-    num_notifications.short_description = "# Notifications"
+    @admin.display(description="Value")
+    def chopped_value(self, obj):
+        if len(obj.value) > 100:
+            return "%s…" % obj.value[:100]
+
+        return obj.value
+
+    @admin.display(boolean=True)
+    def ok(self, obj):
+        return False if obj.last_error else True
 
 
 @admin.register(Notification)
 class NotificationsAdmin(admin.ModelAdmin):
-    search_fields = ["owner__name", "owner__code", "channel__value"]
-    readonly_fields = ("owner",)
-    list_select_related = ("owner", "channel")
+    class Media:
+        css = {"all": ("css/admin/notifications.css",)}
+
+    search_fields = ["owner__name", "owner__code", "channel__value", "error", "code"]
+    readonly_fields = ("owner", "code")
+    list_select_related = ("channel", "owner")
     list_display = (
         "id",
         "created",
-        "check_status",
-        "owner",
         "channel_kind",
+        "check_status",
+        "formatted_owner",
         "channel_value",
         "error",
     )
@@ -231,8 +242,17 @@ class NotificationsAdmin(admin.ModelAdmin):
     def channel_kind(self, obj):
         return obj.channel.kind
 
+    @mark_safe
     def channel_value(self, obj):
-        return obj.channel.value
+        return "<div>%s</div>" % escape(obj.channel.value)
+
+    @admin.display(description="Owner")
+    @mark_safe
+    def formatted_owner(self, obj):
+        if obj.owner:
+            url = reverse("hc-details", args=[obj.owner.code])
+            name = escape(obj.owner.name_then_code())
+            return f"<div><a href='{url}'>{name}</a></div>"
 
 
 @admin.register(Flip)

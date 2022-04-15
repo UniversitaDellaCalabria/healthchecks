@@ -1,11 +1,13 @@
-from hc.api.models import Channel
+from django.test.utils import override_settings
+from hc.api.models import Channel, Check
 from hc.test import BaseTestCase
 
 
 class AddWebhookTestCase(BaseTestCase):
     def setUp(self):
-        super(AddWebhookTestCase, self).setUp()
-        self.url = "/projects/%s/add_webhook/" % self.project.code
+        super().setUp()
+        self.check = Check.objects.create(project=self.project)
+        self.url = f"/projects/{self.project.code}/add_webhook/"
 
     def test_instructions_work(self):
         self.client.login(username="alice@example.org", password="password")
@@ -27,6 +29,9 @@ class AddWebhookTestCase(BaseTestCase):
 
         c = Channel.objects.get()
         self.assertEqual(c.name, "Call foo.com")
+
+        # Make sure it calls assign_all_checks
+        self.assertEqual(c.checks.count(), 1)
 
     def test_it_adds_two_webhook_urls_and_redirects(self):
         form = {
@@ -148,6 +153,19 @@ class AddWebhookTestCase(BaseTestCase):
         self.assertContains(r, """invalid-header""")
         self.assertEqual(Channel.objects.count(), 0)
 
+    def test_it_rejects_non_latin1_in_header_name(self):
+        self.client.login(username="alice@example.org", password="password")
+        form = {
+            "method_down": "GET",
+            "url_down": "http://example.org",
+            "headers_down": "fō:bar",
+            "method_up": "GET",
+        }
+
+        r = self.client.post(self.url, form)
+        self.assertContains(r, """must not contain special characters""")
+        self.assertEqual(Channel.objects.count(), 0)
+
     def test_it_strips_headers(self):
         form = {
             "method_down": "GET",
@@ -177,3 +195,17 @@ class AddWebhookTestCase(BaseTestCase):
         self.assertContains(r, "Enter a valid URL.")
 
         self.assertEqual(Channel.objects.count(), 0)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)
+
+    @override_settings(WEBHOOKS_ENABLED=False)
+    def test_it_handles_disabled_integration(self):
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 404)

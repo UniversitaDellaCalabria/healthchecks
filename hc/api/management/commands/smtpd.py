@@ -1,5 +1,6 @@
 import asyncore
 import email
+import email.policy
 import re
 from smtpd import SMTPServer
 
@@ -12,45 +13,56 @@ RE_UUID = re.compile(
 )
 
 
+def _match(subject, keywords):
+    for s in keywords.split(","):
+        s = s.strip()
+        if s and s in subject:
+            return True
+
+    return False
+
+
+def _process_message(remote_addr, mailfrom, mailto, data):
+    to_parts = mailto.split("@")
+    code = to_parts[0]
+
+    if not RE_UUID.match(code):
+        return f"Not an UUID: {code}"
+
+    try:
+        check = Check.objects.get(code=code)
+    except Check.DoesNotExist:
+        return f"Check not found: {code}"
+
+    action = "success"
+    if check.subject or check.subject_fail:
+        action = "ign"
+        # Specify policy, the default policy does not decode encoded headers:
+        data_str = data.decode(errors="replace")
+        parsed = email.message_from_string(data_str, policy=email.policy.SMTP)
+        subject = parsed.get("subject", "")
+        if check.subject_fail and _match(subject, check.subject_fail):
+            action = "fail"
+        elif check.subject and _match(subject, check.subject):
+            action = "success"
+
+    ua = "Email from %s" % mailfrom
+    check.ping(remote_addr, "email", "", ua, data, action)
+
+    return f"Processed ping for {code}"
+
+
 class Listener(SMTPServer):
     def __init__(self, localaddr, stdout):
         self.stdout = stdout
         super(Listener, self).__init__(localaddr, None, decode_data=False)
 
-    def process_message(
-        self, peer, mailfrom, rcpttos, data, mail_options=None, rcpt_options=None
-    ):
+    def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
         # get a new db connection in case the old one has timed out:
         connections.close_all()
 
-        to_parts = rcpttos[0].split("@")
-        code = to_parts[0]
-
-        try:
-            data = data.decode()
-        except UnicodeError:
-            data = "[binary data]"
-
-        if not RE_UUID.match(code):
-            self.stdout.write("Not an UUID: %s" % code)
-            return
-
-        try:
-            check = Check.objects.get(code=code)
-        except Check.DoesNotExist:
-            self.stdout.write("Check not found: %s" % code)
-            return
-
-        action = "success"
-        if check.subject:
-            parsed = email.message_from_string(data)
-            received_subject = parsed.get("subject", "")
-            if check.subject not in received_subject:
-                action = "ign"
-
-        ua = "Email from %s" % mailfrom
-        check.ping(peer[0], "email", "", ua, data, action)
-        self.stdout.write("Processed ping for %s" % code)
+        result = _process_message(peer[0], mailfrom, rcpttos[0], data)
+        self.stdout.write(result)
 
 
 class Command(BaseCommand):
@@ -65,6 +77,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, host, port, *args, **options):
-        listener = Listener((host, port), self.stdout)
+        _ = Listener((host, port), self.stdout)
         print("Starting SMTP listener on %s:%d ..." % (host, port))
         asyncore.loop()

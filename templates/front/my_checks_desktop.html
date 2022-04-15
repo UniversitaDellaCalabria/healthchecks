@@ -1,7 +1,7 @@
 {% load hc_extras static %}
 <table
     id="checks-table"
-    class="table"
+    class="table {% if rw %}rw{% endif%}"
     data-list-url="{% url 'hc-checks' project.code %}"
     data-status-url="{% url 'hc-status' project.code %}">
     <tr>
@@ -9,11 +9,11 @@
         <th class="th-name">
             {% if sort == "name" %}
             <a href="?sort=-name" data-toggle="tooltip" class="sort-name">
-                Name<span class="icon-asc"></span>
+                Name<span class="ic-asc"></span>
             </a>
             {% elif sort == "-name" %}
             <a href="?sort=created" data-toggle="tooltip" class="sort-name">
-                Name<span class="icon-desc"></span>
+                Name<span class="ic-desc"></span>
             </a>
             {% else %}
             <a href="?sort=name" data-toggle="tooltip" class="default sort-name">
@@ -22,8 +22,16 @@
             {% endif %}
         </th>
         <th class="hidden-xs hidden-sm">
-            <span class="visible-lg">Ping URL</span>
-            <span class="visible-md">Code</span>
+            <span class="visible-lg-inline">
+                Ping URL
+            </span>
+            <span class="visible-md-inline">{{ project.show_slugs|yesno:"Key/Slug,UUID" }}</span>
+            {% if rw %}
+            <small id="url-style-switcher">
+                <a href="?urls=uuid" {% if not project.show_slugs %}class="active"{% endif %}>uuid</a>
+                <a href="?urls=slug" {% if project.show_slugs %}class="active"{% endif %}>slug</a>
+            </small>
+            {% endif %}
         </th>
         <th class="th-integrations hidden-xs">Integrations</th>
         <th class="th-period hidden-xs">
@@ -33,15 +41,15 @@
         <th class="th-last-ping hidden-xs">
             {% if sort == "last_ping" %}
             <a href="?sort=created" data-toggle="tooltip" class="sort-last-ping">
-                Last Ping<span class="icon-desc"></span>
+                Last Ping<span class="ic-desc"></span>
             </a>
             {% elif sort == "-last_ping" %}
             <a href="?sort=last_ping" data-toggle="tooltip" class="sort-last-ping">
-                Last Ping<span class="icon-asc"></span>
+                Last Ping<span class="ic-asc"></span>
             </a>
             {% else %}
             <a href="?sort=-last_ping" data-toggle="tooltip" class="default sort-last-ping">
-                Last Ping</span>
+                Last Ping
             </a>
             {% endif %}
             {% if show_last_duration %}
@@ -52,15 +60,9 @@
         <th></th>
     </tr>
     {% for check in checks %}
-    <tr
-        id="{{ check.code }}"
-        class="checks-row"
-        data-url="{{ check.url }}"
-        data-email="{{ check.email }}"
-        {% if check in hidden_checks %}style="display: none"{% endif %}>
-
+    <tr id="{{ check.code }}" class="checks-row" {% if check in hidden_checks %}style="display: none"{% endif %}>
         <td class="indicator-cell">
-            <span class="status icon-{{ check.get_status }}" data-toggle="tooltip"></span>
+            <span class="status ic-{{ check.get_status }}" data-toggle="tooltip"></span>
             <div class="spinner {% if check.last_start %}started{% endif %}">
                 <div class="d1"></div>
                 <div class="d2"></div>
@@ -78,22 +80,23 @@
                 {% endfor %}
             </div>
         </td>
-        <td class="url-cell hidden-xs hidden-sm">
-            <span class="my-checks-url">
-                <span class="base hidden-md">{{ ping_endpoint }}</span>{{ check.code }}
-            </span>
-            <button
-                class="copy-link hidden-sm"
-                data-clipboard-text="{{ check.url }}">
-                copy
-            </button>
+        <td class="hidden-xs hidden-sm url">
+            {% if project.show_slugs and not check.slug %}
+                <span class="unavailable">unavailable, set name first</span>
+            {% else %}
+                <span class="my-checks-url">{{ check.url|format_ping_endpoint }}</span>
+                {% if project.show_slugs and check.slug in ambiguous %}
+                <small class="text-danger">(not unique)</small>
+                {% endif %}
+                <button class="copy-link" data-clipboard-text="{{ check.url }}">copy</button>
+            {% endif %}
         </td>
-        <td class="integrations-cell hidden-xs">
+        <td class="hidden-xs">
             {% if channels|length <= 10 %}
                 <div class="integrations">
                 {% spaceless %}
                 {% for channel in channels %}
-                    <span class="icon-{{ channel.kind }}{% if channel in check.channel_set.all %}{% else %} off{% endif %}"></span>
+                    <span class="ic-{{ channel.kind }}{% if channel in check.channel_set.all %}{% else %} off{% endif %}"></span>
                 {% endfor %}
                 {% endspaceless %}
                 </div>
@@ -101,14 +104,13 @@
                 {{ check.channel_set.all|length }} of {{ channels|length }}
             {% endif %}
         </td>
-        <td class="timeout-cell hidden-xs">
-            <div
+        <td class="hidden-xs">
+            <div class="timeout-grace"
                 data-kind="{{ check.kind }}"
-                data-timeout="{{ check.timeout.total_seconds }}"
-                data-grace="{{ check.grace.total_seconds }}"
+                data-timeout="{{ check.timeout.total_seconds|floatformat:'0' }}"
+                data-grace="{{ check.grace.total_seconds|floatformat:'0' }}"
                 data-schedule="{{ check.schedule }}"
-                data-tz="{{ check.tz }}"
-                class="timeout-grace">
+                data-tz="{{ check.tz }}">
                 {% if check.kind == "simple" %}
                     {{ check.timeout|hc_duration }}
                     <br />
@@ -126,12 +128,13 @@
             </div>
         </td>
         <td class="actions">
+            {% if rw %}
             <button class="btn btn-default pause" type="button">
-                <span class="icon-paused" />
+                <span class="ic-paused"></span>
             </button>
-
+            {% endif %}
             <button title="Show Details" class="btn btn-default show-log" type="button">
-                <span class="icon-dots" />
+                <span class="ic-dots"></span>
             </button>
         </td>
     </tr>

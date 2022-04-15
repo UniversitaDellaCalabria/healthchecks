@@ -1,7 +1,7 @@
 $(function () {
     var base = document.getElementById("base-url").getAttribute("href").slice(0, -1);
 
-    $(".my-checks-name").click(function() {
+    $(".rw .my-checks-name").click(function() {
         var code = $(this).closest("tr.checks-row").attr("id");
         var url = base + "/checks/" + code + "/name/";
 
@@ -27,7 +27,7 @@ $(function () {
         }
     });
 
-    $(".integrations").on("click", "span", function() {
+    $(".rw .integrations").on("click", "span", function() {
         var isOff = $(this).toggleClass("off").hasClass("off");
         var token = $('input[name=csrfmiddlewaretoken]').val();
 
@@ -51,20 +51,19 @@ $(function () {
         if (this.innerText == "Never") {
             return false;
         }
-
-        $("#ping-details-body").text("Updating...");
-        $('#ping-details-modal').modal("show");
-
         var code = $(this).closest("tr.checks-row").attr("id");
         var lastPingUrl = base + "/checks/" + code + "/last_ping/";
-        $.get(lastPingUrl, function(data) {
-            $("#ping-details-body" ).html(data);
-        });
+        loadPingDetails(lastPingUrl);
 
         var logUrl = base + "/checks/" + code + "/log/";
         $("#ping-details-log").attr("href", logUrl);
 
         return false;
+    });
+
+    $(".last-ping").tooltip({
+        selector: ".label-confirmation",
+        title: 'The word "confirm" was found in request body'
     });
 
     function applyFilters() {
@@ -160,7 +159,7 @@ $(function () {
         // Second click: update UI and pause the check
         btn.removeClass("confirm").tooltip("hide");
         var code = btn.closest("tr.checks-row").attr("id");
-        $("#" + code + " span.status").attr("class", "status icon-paused");
+        $("#" + code + " span.status").attr("class", "status ic-paused");
 
         var url = base + "/checks/" + code + "/pause/";
         var token = $('input[name=csrfmiddlewaretoken]').val();
@@ -177,15 +176,14 @@ $(function () {
         $(this).removeClass("confirm").tooltip("hide");
     });
 
-
     $('[data-toggle="tooltip"]').tooltip({
         html: true,
         container: "body",
         title: function() {
             var cssClasses = this.getAttribute("class");
-            if (cssClasses.indexOf("icon-new") > -1)
+            if (cssClasses.indexOf("ic-new") > -1)
                 return "New. Has never received a ping.";
-            if (cssClasses.indexOf("icon-paused") > -1)
+            if (cssClasses.indexOf("ic-paused") > -1)
                 return "Monitoring paused. Ping to resume.";
 
             if (cssClasses.indexOf("sort-name") > -1)
@@ -211,7 +209,7 @@ $(function () {
                 for(var i=0, el; el=data.details[i]; i++) {
                     if (lastStatus[el.code] != el.status) {
                         lastStatus[el.code] = el.status;
-                        $("#" + el.code + " span.status").attr("class", "status icon-" + el.status);
+                        $("#" + el.code + " span.status").attr("class", "status ic-" + el.status);
                     }
 
                     if (lastStarted[el.code] != el.started) {
@@ -247,7 +245,7 @@ $(function () {
     }
 
     // Copy to clipboard
-    var clipboard = new Clipboard('button.copy-link');
+    var clipboard = new ClipboardJS('button.copy-link');
     $("button.copy-link").mouseout(function(e) {
         setTimeout(function() {
             e.target.textContent = "copy";

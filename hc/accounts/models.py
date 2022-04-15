@@ -1,5 +1,7 @@
 from datetime import timedelta
+import random
 from secrets import token_urlsafe
+from urllib.parse import quote, urlencode
 import uuid
 
 from django.conf import settings
@@ -9,9 +11,15 @@ from django.core.signing import TimestampSigner
 from django.db import models
 from django.db.models import Count, Q
 from django.urls import reverse
-from django.utils import timezone
+from django.utils.timezone import now
+from fido2.ctap2 import AttestedCredentialData
 from hc.lib import emails
 from hc.lib.date import month_boundaries
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 
 NO_NAG = timedelta()
@@ -20,6 +28,8 @@ NAG_PERIODS = (
     (timedelta(hours=1), "Hourly"),
     (timedelta(days=1), "Daily"),
 )
+
+REPORT_CHOICES = (("off", "Off"), ("weekly", "Weekly"), ("monthly", "Monthly"))
 
 
 def month(dt):
@@ -37,6 +47,7 @@ class ProfileManager(models.Manager):
                 # If not using payments, set high limits
                 profile.check_limit = 500
                 profile.sms_limit = 500
+                profile.call_limit = 500
                 profile.team_limit = 500
 
             profile.save()
@@ -46,19 +57,30 @@ class ProfileManager(models.Manager):
 class Profile(models.Model):
     user = models.OneToOneField(User, models.CASCADE, blank=True, null=True)
     next_report_date = models.DateTimeField(null=True, blank=True)
-    reports_allowed = models.BooleanField(default=True)
+    reports = models.CharField(max_length=10, default="monthly", choices=REPORT_CHOICES)
     nag_period = models.DurationField(default=NO_NAG, choices=NAG_PERIODS)
     next_nag_date = models.DateTimeField(null=True, blank=True)
     ping_log_limit = models.IntegerField(default=100)
     check_limit = models.IntegerField(default=20)
     token = models.CharField(max_length=128, blank=True)
+
     last_sms_date = models.DateTimeField(null=True, blank=True)
     sms_limit = models.IntegerField(default=5)
     sms_sent = models.IntegerField(default=0)
+
+    last_call_date = models.DateTimeField(null=True, blank=True)
+    call_limit = models.IntegerField(default=0)
+    calls_sent = models.IntegerField(default=0)
+
     team_limit = models.IntegerField(default=2)
     sort = models.CharField(max_length=20, default="created")
     deletion_notice_date = models.DateTimeField(null=True, blank=True)
     last_active_date = models.DateTimeField(null=True, blank=True)
+    tz = models.CharField(max_length=36, default="UTC")
+    theme = models.CharField(max_length=10, null=True, blank=True)
+
+    totp = models.CharField(max_length=32, null=True, blank=True)
+    totp_created = models.DateTimeField(null=True, blank=True)
 
     objects = ProfileManager()
 
@@ -109,18 +131,6 @@ class Profile(models.Model):
         }
         emails.transfer_request(self.user.email, ctx)
 
-    def send_set_password_link(self):
-        token = self.prepare_token("set-password")
-        path = reverse("hc-set-password", args=[token])
-        ctx = {"button_text": "Set Password", "button_url": settings.SITE_ROOT + path}
-        emails.set_password(self.user.email, ctx)
-
-    def send_change_email_link(self):
-        token = self.prepare_token("change-email")
-        path = reverse("hc-change-email", args=[token])
-        ctx = {"button_text": "Change Email", "button_url": settings.SITE_ROOT + path}
-        emails.change_email(self.user.email, ctx)
-
     def send_sms_limit_notice(self, transport):
         ctx = {"transport": transport, "limit": self.sms_limit}
         if self.sms_limit != 500 and settings.USE_PAYMENTS:
@@ -128,11 +138,18 @@ class Profile(models.Model):
 
         emails.sms_limit(self.user.email, ctx)
 
+    def send_call_limit_notice(self):
+        ctx = {"limit": self.call_limit}
+        if self.call_limit != 500 and settings.USE_PAYMENTS:
+            ctx["url"] = settings.SITE_ROOT + reverse("hc-pricing")
+
+        emails.call_limit(self.user.email, ctx)
+
     def projects(self):
         """ Return a queryset of all projects we have access to. """
 
-        is_owner = Q(owner=self.user)
-        is_member = Q(member__user=self.user)
+        is_owner = Q(owner_id=self.user_id)
+        is_member = Q(member__user_id=self.user_id)
         q = Project.objects.filter(is_owner | is_member)
         return q.distinct().order_by("name")
 
@@ -166,7 +183,7 @@ class Profile(models.Model):
         result = checks.aggregate(models.Max("last_ping"))
         last_ping = result["last_ping__max"]
 
-        six_months_ago = timezone.now() - timedelta(days=180)
+        six_months_ago = now() - timedelta(days=180)
         if last_ping is None or last_ping < six_months_ago:
             return False
 
@@ -187,20 +204,24 @@ class Profile(models.Model):
 
         headers = {
             "List-Unsubscribe": "<%s>" % unsub_url,
-            "X-Bounce-Url": unsub_url,
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         }
+
+        boundaries = month_boundaries(months=3)
+        # throw away the current month, keep two previous months
+        boundaries.pop()
 
         ctx = {
             "checks": checks,
             "sort": self.sort,
-            "now": timezone.now(),
+            "now": now(),
             "unsub_link": unsub_url,
             "notifications_url": self.notifications_url(),
             "nag": nag,
             "nag_period": self.nag_period.total_seconds(),
             "num_down": num_down,
-            "month_boundaries": month_boundaries(),
+            "month_boundaries": boundaries,
+            "monthly_or_weekly": self.reports,
         }
 
         emails.report(self.user.email, ctx, headers)
@@ -212,7 +233,7 @@ class Profile(models.Model):
             return 0
 
         # If last sent date is not from this month, we've sent 0 this month.
-        if month(timezone.now()) > month(self.last_sms_date):
+        if month(now()) > month(self.last_sms_date):
             return 0
 
         return self.sms_sent
@@ -225,7 +246,30 @@ class Profile(models.Model):
             return False
 
         self.sms_sent = sent_this_month + 1
-        self.last_sms_date = timezone.now()
+        self.last_sms_date = now()
+        self.save()
+        return True
+
+    def calls_sent_this_month(self):
+        # IF last_call_date was never set, we have not made any phone calls yet.
+        if not self.last_call_date:
+            return 0
+
+        # If last sent date is not from this month, we've made 0 calls this month.
+        if month(now()) > month(self.last_call_date):
+            return 0
+
+        return self.calls_sent
+
+    def authorize_call(self):
+        """ If monthly limit not exceeded, increase counter and return True """
+
+        sent_this_month = self.calls_sent_this_month()
+        if sent_this_month >= self.call_limit:
+            return False
+
+        self.calls_sent = sent_this_month + 1
+        self.last_call_date = now()
         self.save()
         return True
 
@@ -240,6 +284,39 @@ class Profile(models.Model):
     def can_accept(self, project):
         return project.num_checks() <= self.num_checks_available()
 
+    def update_next_nag_date(self):
+        any_down = self.checks_from_all_projects().filter(status="down").exists()
+        if any_down and self.next_nag_date is None and self.nag_period:
+            self.next_nag_date = now() + self.nag_period
+            self.save(update_fields=["next_nag_date"])
+        elif not any_down and self.next_nag_date:
+            self.next_nag_date = None
+            self.save(update_fields=["next_nag_date"])
+
+    def choose_next_report_date(self):
+        """ Calculate the target date for the next monthly/weekly report.
+
+        Monthly reports should get sent on 1st of each month, between
+        9AM and 11AM in user's timezone.
+
+        Weekly reports should get sent on Mondays, between
+        9AM and 11AM in user's timezone.
+
+        """
+
+        if self.reports == "off":
+            return None
+
+        dt = now().astimezone(ZoneInfo(self.tz))
+        dt = dt.replace(hour=9, minute=0) + timedelta(minutes=random.randrange(0, 120))
+
+        while True:
+            dt += timedelta(days=1)
+            if self.reports == "monthly" and dt.day == 1:
+                return dt
+            elif self.reports == "weekly" and dt.weekday() == 0:
+                return dt
+
 
 class Project(models.Model):
     code = models.UUIDField(default=uuid.uuid4, unique=True)
@@ -248,6 +325,8 @@ class Project(models.Model):
     api_key = models.CharField(max_length=128, blank=True, db_index=True)
     api_key_readonly = models.CharField(max_length=128, blank=True, db_index=True)
     badge_key = models.CharField(max_length=150, unique=True)
+    ping_key = models.CharField(max_length=128, blank=True, null=True, unique=True)
+    show_slugs = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name or self.owner.email
@@ -262,14 +341,6 @@ class Project(models.Model):
     def num_checks_available(self):
         return self.owner_profile.num_checks_available()
 
-    def set_api_keys(self):
-        self.api_key = token_urlsafe(nbytes=24)
-        self.api_key_readonly = token_urlsafe(nbytes=24)
-        self.save()
-
-    def team(self):
-        return User.objects.filter(memberships__project=self).order_by("email")
-
     def invite_suggestions(self):
         q = User.objects.filter(memberships__project__owner_id=self.owner_id)
         q = q.exclude(memberships__project=self)
@@ -280,34 +351,48 @@ class Project(models.Model):
         used = q.distinct().count()
         return used < self.owner_profile.team_limit
 
-    def invite(self, user):
-        Member.objects.create(user=user, project=self)
+    def invite(self, user, role):
+        if Member.objects.filter(user=user, project=self).exists():
+            return False
+
+        if self.owner_id == user.id:
+            return False
+
+        Member.objects.create(user=user, project=self, role=role)
         checks_url = reverse("hc-checks", args=[self.code])
         user.profile.send_instant_login_link(self, redirect_url=checks_url)
+        return True
 
-    def set_next_nag_date(self):
-        """ Set next_nag_date on profiles of all members of this project. """
+    def update_next_nag_dates(self):
+        """ Update next_nag_date on profiles of all members of this project. """
 
-        is_owner = Q(user=self.owner)
+        is_owner = Q(user_id=self.owner_id)
         is_member = Q(user__memberships__project=self)
-        q = Profile.objects.filter(is_owner | is_member)
-        q = q.exclude(nag_period=NO_NAG)
-        # Exclude profiles with next_nag_date already set
-        q = q.filter(next_nag_date__isnull=True)
+        q = Profile.objects.filter(is_owner | is_member).exclude(nag_period=NO_NAG)
 
-        q.update(next_nag_date=timezone.now() + models.F("nag_period"))
+        for profile in q:
+            profile.update_next_nag_date()
 
     def overall_status(self):
-        status = "up"
-        for check in self.check_set.all():
-            check_status = check.get_status()
-            if status == "up" and check_status == "grace":
-                status = "grace"
+        if not hasattr(self, "_overall_status"):
+            self._overall_status = "up"
+            for check in self.check_set.all():
+                check_status = check.get_status()
+                if check_status == "grace" and self._overall_status == "up":
+                    self._overall_status = "grace"
+                elif check_status == "down":
+                    self._overall_status = "down"
+                    break
 
-            if check_status == "down":
-                status = "down"
-                break
-        return status
+        return self._overall_status
+
+    def get_n_down(self):
+        result = 0
+        for check in self.check_set.all():
+            if check.get_status() == "down":
+                result += 1
+
+        return result
 
     def have_channel_issues(self):
         errors = list(self.channel_set.values_list("last_error", flat=True))
@@ -322,11 +407,50 @@ class Project(models.Model):
     def transfer_request(self):
         return self.member_set.filter(transfer_request_date__isnull=False).first()
 
+    def dashboard_url(self):
+        if not self.api_key_readonly:
+            return None
+
+        frag = urlencode({self.api_key_readonly: str(self)}, quote_via=quote)
+        return reverse("hc-dashboard") + "#" + frag
+
+    def checks_url(self):
+        return settings.SITE_ROOT + reverse("hc-checks", args=[self.code])
+
 
 class Member(models.Model):
+    class Role(models.TextChoices):
+        READONLY = "r", "Read-only"
+        REGULAR = "w", "Member"
+        MANAGER = "m", "Manager"
+
     user = models.ForeignKey(User, models.CASCADE, related_name="memberships")
     project = models.ForeignKey(Project, models.CASCADE)
     transfer_request_date = models.DateTimeField(null=True, blank=True)
+    role = models.CharField(max_length=1, default=Role.REGULAR, choices=Role.choices)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "project"], name="accounts_member_no_duplicates"
+            )
+        ]
 
     def can_accept(self):
         return self.user.profile.can_accept(self.project)
+
+    @property
+    def is_rw(self):
+        return self.role in (Member.Role.REGULAR, Member.Role.MANAGER)
+
+
+class Credential(models.Model):
+    code = models.UUIDField(default=uuid.uuid4, unique=True)
+    name = models.CharField(max_length=100)
+    user = models.ForeignKey(User, models.CASCADE, related_name="credentials")
+    created = models.DateTimeField(auto_now_add=True)
+    data = models.BinaryField()
+
+    def unpack(self):
+        unpacked, remaining_data = AttestedCredentialData.unpack_from(self.data)
+        return unpacked

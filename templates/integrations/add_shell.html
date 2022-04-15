@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load compress humanize static hc_extras %}
 
-{% block title %}Add Shell Command - {% site_name %}{% endblock %}
+{% block title %}Add Shell Command - {{ site_name }}{% endblock %}
 
 
 {% block content %}
@@ -56,12 +56,10 @@
         </div>
         </div>
 
-        <div class="form-group" class="clearfix">
-            <br>
-            <br>
-            <div class="text-right">
-                <button type="submit" class="btn btn-primary">Save Integration</button>
-            </div>
+        <br>
+        <br>
+        <div class="text-right">
+            <button type="submit" class="btn btn-primary">Save Integration</button>
         </div>
         </form>
 
@@ -77,7 +75,7 @@
             <div class="modal-body">
                 <p>
                     You can use the below placeholders in the command.
-                    {% site_name %} will replace the placeholders
+                    {{ site_name }} will replace the placeholders
                     with the correct values.
                 </p>
 

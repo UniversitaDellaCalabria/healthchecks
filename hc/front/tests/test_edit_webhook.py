@@ -1,12 +1,14 @@
 import json
 
-from hc.api.models import Channel
+from hc.api.models import Channel, Check
 from hc.test import BaseTestCase
 
 
 class EditWebhookTestCase(BaseTestCase):
     def setUp(self):
-        super(EditWebhookTestCase, self).setUp()
+        super().setUp()
+
+        self.check = Check.objects.create(project=self.project)
 
         definition = {
             "method_down": "GET",
@@ -24,7 +26,7 @@ class EditWebhookTestCase(BaseTestCase):
         self.channel.value = json.dumps(definition)
         self.channel.save()
 
-        self.url = "/integrations/%s/edit_webhook/" % self.channel.code
+        self.url = f"/integrations/{self.channel.code}/edit/"
 
     def test_it_shows_form(self):
         self.client.login(username="alice@example.org", password="password")
@@ -74,11 +76,21 @@ class EditWebhookTestCase(BaseTestCase):
         self.assertEqual(up_spec["body"], "going up")
         self.assertEqual(up_spec["headers"], {"Content-Type": "text/plain"})
 
+        # Make sure it does not call assign_all_checks
+        self.assertFalse(self.channel.checks.exists())
+
     def test_it_requires_kind_webhook(self):
-        self.channel.kind = "email"
-        self.channel.value = "foo@example.org"
+        self.channel.kind = "shell"
         self.channel.save()
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 400)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.url, {})
+        self.assertEqual(r.status_code, 403)

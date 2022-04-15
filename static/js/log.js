@@ -1,27 +1,23 @@
 $(function () {
     $("#log tr.ok").on("click", function() {
-        $("#ping-details-body").text("Updating...");
-        $('#ping-details-modal').modal("show");
-
-        $.get(this.dataset.url, function(data) {
-            $("#ping-details-body").html(data);
-        });
-
+        var n = $("td", this).first().text();
+        var tmpl = $("#log").data("url").slice(0, -2);
+        loadPingDetails(tmpl + n + "/");
         return false;
     });
 
     function switchDateFormat(format) {
-        $("#log tr").each(function(index, row) {
-            var dt = moment(row.getAttribute("data-dt"));
+        document.querySelectorAll("#log tr").forEach(function(row) {
+            var dt = moment(row.dataset.dt);
             format == "local" ? dt.local() : dt.tz(format);
 
-            $(".date", row).text(dt.format("MMM D"));
-            $(".time", row).text(dt.format("HH:mm"));                
-        })        
+            row.children[1].textContent = dt.format("MMM D");
+            row.children[2].textContent = dt.format("HH:mm");
+        })
     }
 
     $("#format-switcher").click(function(ev) {
-        var format = ev.target.getAttribute("data-format");
+        var format = ev.target.dataset.format;
         switchDateFormat(format);
     });
 

@@ -21,7 +21,7 @@ class UnsubscribeReportsTestCase(BaseTestCase):
         self.assertContains(r, "Unsubscribed")
 
         self.profile.refresh_from_db()
-        self.assertFalse(self.profile.reports_allowed)
+        self.assertEqual(self.profile.reports, "off")
         self.assertIsNone(self.profile.next_report_date)
 
         self.assertEqual(self.profile.nag_period.total_seconds(), 0)
@@ -51,3 +51,12 @@ class UnsubscribeReportsTestCase(BaseTestCase):
         r = self.client.get(url)
         self.assertContains(r, "Please press the button below")
         self.assertContains(r, "submit()")
+
+    def test_it_handles_missing_user(self):
+        self.alice.delete()
+
+        sig = signing.TimestampSigner(salt="reports").sign("alice")
+        url = "/accounts/unsubscribe_reports/%s/" % sig
+
+        r = self.client.post(url)
+        self.assertContains(r, "Unsubscribed")

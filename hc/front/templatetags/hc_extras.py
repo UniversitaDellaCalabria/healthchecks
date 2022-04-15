@@ -2,6 +2,7 @@ import re
 
 from django import template
 from django.conf import settings
+from django.templatetags.static import static
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.timezone import now
@@ -31,6 +32,22 @@ def site_name():
     return settings.SITE_NAME
 
 
+@register.simple_tag
+def absolute_site_logo_url():
+    """ Return absolute URL to site's logo.
+
+    Uses settings.SITE_LOGO_URL if set, uses
+    /static/img/logo.png as fallback.
+
+    """
+
+    url = settings.SITE_LOGO_URL or static("img/logo.png")
+    if url.startswith("/"):
+        url = settings.SITE_ROOT + url
+
+    return url
+
+
 @register.filter
 def mangle_link(s):
     return mark_safe(escape(s).replace(".", "<span>.</span>"))
@@ -39,13 +56,6 @@ def mangle_link(s):
 @register.simple_tag
 def site_root():
     return settings.SITE_ROOT
-
-
-@register.simple_tag
-def site_scheme():
-    parts = settings.SITE_ROOT.split("://")
-    assert parts[0] in ("http", "https")
-    return parts[0]
 
 
 @register.simple_tag
@@ -66,6 +76,15 @@ def debug_warning():
             """
             <div id="debug-warning">
             Running in debug mode, do not use in production.
+            </div>
+        """
+        )
+
+    if settings.SECRET_KEY == "---":
+        return mark_safe(
+            """
+            <div id="debug-warning">
+            Running with an insecure SECRET_KEY value, do not use in production.
             </div>
         """
         )
@@ -134,7 +153,7 @@ def down_title(check):
 
 @register.filter
 def break_underscore(s):
-    """ Add non-breaking-space characters after underscores. """
+    """ Add zero-width-space characters after underscores. """
 
     if len(s) > 30:
         s = s.replace("_", "_\u200b")
@@ -157,3 +176,57 @@ def format_headers(headers):
 @register.simple_tag
 def now_isoformat():
     return now().replace(microsecond=0).isoformat()
+
+
+@register.filter
+def isoformat(td):
+    return td.replace(microsecond=0).isoformat()
+
+
+@register.filter
+def guess_schedule(check):
+    if check.kind == "cron":
+        return check.schedule
+
+    v = int(check.timeout.total_seconds())
+
+    # every minute
+    if v == 60:
+        return "* * * * *"
+
+    # every hour
+    if v == 3600:
+        return "0 * * * *"
+
+    # every day
+    if v == 3600 * 24:
+        return "0 0 * * *"
+
+    # every X minutes, if 60 is divisible by X
+    minutes, seconds = divmod(v, 60)
+    if minutes in (2, 3, 4, 5, 6, 10, 12, 15, 20, 30) and seconds == 0:
+        return f"*/{minutes} * * * *"
+
+    # every X hours, if 24 is divisible by X
+    hours, seconds = divmod(v, 3600)
+    if hours in (2, 3, 4, 6, 8, 12) and seconds == 0:
+        return f"0 */{hours} * * *"
+
+
+FORMATTED_PING_ENDPOINT = (
+    f"""<span class="base hidden-md">{settings.PING_ENDPOINT}</span>"""
+)
+
+
+@register.filter
+def format_ping_endpoint(ping_url):
+    """ Wrap the ping endpoint in span tags for styling with CSS. """
+
+    assert ping_url.startswith(settings.PING_ENDPOINT)
+    tail = ping_url[len(settings.PING_ENDPOINT) :]
+    return mark_safe(FORMATTED_PING_ENDPOINT + escape(tail))
+
+
+@register.filter
+def mask_key(key):
+    return key[:4] + "*" * len(key[4:])

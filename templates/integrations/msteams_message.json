@@ -3,7 +3,6 @@
     "@type": "MessageCard",
     "@context": "https://schema.org/extensions",
     "themeColor": "{% if check.status == "up" %}5cb85c{% endif %}{% if check.status == "down" %}d9534f{% endif %}",
-    "text": "“{{ check.name_then_code|escapejs }}” is {{ check.status|upper }}.",
     "sections": [
         {
             "facts": [
@@ -36,8 +35,7 @@
                     "name": "Total Pings:",
                     "value": "{{ check.n_pings }}"
                 }
-            ],
-            "text": "{{ check.desc|escapejs }}"
+            ]
         }
     ],
     "potentialAction": [
@@ -47,7 +45,7 @@
             "targets": [
                 {
                     "os": "default",
-                    "uri": "{{ check.details_url }}"
+                    "uri": "{{ check.cloaked_url }}"
                 }
             ]
         }

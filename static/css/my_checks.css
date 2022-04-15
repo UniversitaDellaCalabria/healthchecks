@@ -3,9 +3,9 @@
 }
 
 #my-checks-tags .up {
-    color: #333;
-    background-color: #fff;
-    border-color: #ccc;
+    color: var(--tag-up-color);
+    background-color: var(--tag-up-bg);
+    border-color: var(--tag-up-border);
 }
 
 #my-checks-tags .grace {
@@ -21,10 +21,10 @@
 }
 
 #my-checks-tags .checked {
-    box-shadow: 0 0 3px #ddd;
-    background: #333;
-    color: #eee;
-    border-color: #000;
+    box-shadow: 0 0 3px var(--tag-checked-shadow);
+    background: var(--tag-checked-bg);
+    color: var(--tag-checked-color);
+    border-color: var(--tag-checked-border);
 }
 
 #search {
@@ -34,7 +34,7 @@
 
 @media (min-width: 992px) {
     #update-timeout-modal .modal-dialog, #ping-details-modal .modal-dialog  {
-        width: 800px;
+        width: 850px;
     }
     #update-name-modal .modal-dialog  {
         width: 650px;
@@ -46,24 +46,37 @@
     padding-top: 35px;
 }
 
-.update-timeout-info {
-    line-height: 22px;
+.interval-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 18px;
 }
 
-.update-timeout-label {
-    position: relative;
-    right: 3px;
-    display: inline-block;
+.interval-controls label {
+    font-weight: normal;
+    padding-right: 16px;
+    width: 120px;
     text-align: right;
-    width: 100px;
 }
 
-.update-timeout-value {
-    font-size: 22px;
-    display: inline-block;
+.interval-controls input {
     width: 100px;
-    text-align: left;
-    white-space: nowrap;
+    text-align: center;
+    -moz-appearance: textfield;
+}
+
+.interval-controls input::-webkit-outer-spin-button,
+.interval-controls input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+}
+
+.interval-controls select.form-control {
+    width: auto;
+    padding-left: 8px;
+    margin-left: 8px;
+    /* Fix dropdown background in Chrome & dark mode */
+    background: var(--panel-bg);
 }
 
 .kind-simple, .kind-cron {
@@ -92,13 +105,12 @@
     font-weight: bold;
     font-style: italic;
     font-size: 18px;
-    color: #FFF;
-    color: #333;
+    color: var(--text-color);
     padding: 16px 8px 0px 8px;
 }
 
 #cron-preview {
-    background: #f8f8f8;
+    background: var(--pre-bg);
     min-height: 298px;
 }
 
@@ -129,11 +141,11 @@
     font-size: small;
     font-family: monospace;
     text-align: right;
-    color: #888;
+    color: var(--text-muted);
 }
 
 #period-slider {
-    margin: 20px 50px 80px 50px;
+    margin: 20px 50px 90px 50px;
 }
 
 #period-slider.noUi-connect {
@@ -154,7 +166,7 @@
 }
 
 .update-timeout-terms {
-    color: #999;
+    color: var(--text-muted);
 }
 
 .update-timeout-terms p {
@@ -165,9 +177,18 @@
     font-weight: bold;
 }
 
+#update-timeout-grace-cron {
+    -moz-appearance: textfield;
+}
+
+#update-timeout-grace-cron::-webkit-outer-spin-button,
+#update-timeout-grace-cron::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+}
+
 .label-tag {
-    background-color: #eee;
-    color: #555;
+    background-color: var(--tag-bg);
+    color: var(--tag-color);
     font-style: normal;
     font-weight: 500;
 }
@@ -197,11 +218,11 @@
 }
 
 #show-usage-modal .highlight:nth-child(n+2) {
-    border-top: 1px solid #ddd;
+    border-top: 1px solid var(--border-color);
 }
 
 .add-check-note {
-    color: #888;
+    color: var(--text-muted);
     text-align: center;
     margin-top: 10px;
     font-size: 12px;

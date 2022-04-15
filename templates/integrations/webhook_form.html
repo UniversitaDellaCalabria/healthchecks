@@ -2,10 +2,10 @@
 {% load compress humanize static hc_extras %}
 
 {% block title %}
-    {% if channel %}
-    Webhook Settings - {% site_name %}
-    {% else %}
+    {% if is_new %}
     Add Webhook Integration - {% site_name %}
+    {% else %}
+    Webhook Settings - {% site_name %}
     {% endif %}
 {% endblock %}
 
@@ -154,18 +154,16 @@
         </div>
         </div>
 
-        <div class="form-group" class="clearfix">
-            <br>
-            <br>
-            <div class="text-right">
-                <button type="submit" class="btn btn-primary">
-                    {% if channel %}
-                    Save Changes
-                    {% else %}
-                    Save Integration
-                    {% endif %}
-                </button>
-            </div>
+        <br>
+        <br>
+        <div class="text-right">
+            <button type="submit" class="btn btn-primary">
+                {% if channel %}
+                Save Changes
+                {% else %}
+                Save Integration
+                {% endif %}
+            </button>
         </div>
         </form>
 
@@ -226,7 +224,7 @@
 
 {% block scripts %}
 {% compress js %}
-<script src="{% static 'js/jquery-2.1.4.min.js' %}"></script>
+<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
 <script src="{% static 'js/bootstrap.min.js' %}"></script>
 <script src="{% static 'js/bootstrap-select.min.js' %}"></script>
 <script src="{% static 'js/webhook.js' %}"></script>

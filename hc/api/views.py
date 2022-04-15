@@ -1,6 +1,5 @@
 from datetime import timedelta as td
 import time
-import uuid
 
 from django.conf import settings
 from django.db import connection
@@ -22,17 +21,25 @@ from hc.api import schemas
 from hc.api.decorators import authorize, authorize_read, cors, validate_json
 from hc.api.forms import FlipsFiltersForm
 from hc.api.models import MAX_DELTA, Flip, Channel, Check, Notification, Ping
-from hc.lib.badges import check_signature, get_badge_svg
+from hc.lib.badges import check_signature, get_badge_svg, get_badge_url
 
 
 class BadChannelException(Exception):
-    pass
+    def __init__(self, message):
+        self.message = message
 
 
 @csrf_exempt
 @never_cache
-def ping(request, code, action="success"):
-    check = get_object_or_404(Check, code=code)
+def ping(request, code, check=None, action="success", exitstatus=None):
+    if check is None:
+        try:
+            check = Check.objects.get(code=code)
+        except Check.DoesNotExist:
+            return HttpResponseNotFound("not found")
+
+    if exitstatus is not None and exitstatus > 255:
+        return HttpResponseBadRequest("invalid url format")
 
     headers = request.META
     remote_addr = headers.get("HTTP_X_FORWARDED_FOR", headers["REMOTE_ADDR"])
@@ -40,16 +47,31 @@ def ping(request, code, action="success"):
     scheme = headers.get("HTTP_X_FORWARDED_PROTO", "http")
     method = headers["REQUEST_METHOD"]
     ua = headers.get("HTTP_USER_AGENT", "")
-    body = request.body.decode()
+    body = request.body[: settings.PING_BODY_LIMIT]
+
+    if exitstatus is not None and exitstatus > 0:
+        action = "fail"
 
     if check.methods == "POST" and method != "POST":
         action = "ign"
 
-    check.ping(remote_addr, scheme, method, ua, body, action)
+    check.ping(remote_addr, scheme, method, ua, body, action, exitstatus)
 
     response = HttpResponse("OK")
     response["Access-Control-Allow-Origin"] = "*"
     return response
+
+
+@csrf_exempt
+def ping_by_slug(request, ping_key, slug, action="success", exitstatus=None):
+    try:
+        check = Check.objects.get(slug=slug, project__ping_key=ping_key)
+    except Check.DoesNotExist:
+        return HttpResponseNotFound("not found")
+    except Check.MultipleObjectsReturned:
+        return HttpResponse("ambiguous slug", status=409)
+
+    return ping(request, check.code, check, action, exitstatus)
 
 
 def _lookup(project, spec):
@@ -71,66 +93,97 @@ def _lookup(project, spec):
 
 
 def _update(check, spec):
-    channels = set()
-    # First, validate the supplied channel codes
-    if "channels" in spec and spec["channels"] not in ("*", ""):
-        q = Channel.objects.filter(project=check.project)
+    # First, validate the supplied channel codes/names
+    if "channels" not in spec:
+        # If the channels key is not present, don't update check's channels
+        new_channels = None
+    elif spec["channels"] == "*":
+        # "*" means "all project's channels"
+        new_channels = Channel.objects.filter(project=check.project)
+    elif spec.get("channels") == "":
+        # "" means "empty list"
+        new_channels = []
+    else:
+        # expect a comma-separated list of channel codes or names
+        new_channels = set()
+        available = list(Channel.objects.filter(project=check.project))
+
         for s in spec["channels"].split(","):
-            try:
-                code = uuid.UUID(s)
-            except ValueError:
+            if s == "":
+                raise BadChannelException("empty channel identifier")
+
+            matches = [c for c in available if str(c.code) == s or c.name == s]
+            if len(matches) == 0:
                 raise BadChannelException("invalid channel identifier: %s" % s)
+            elif len(matches) > 1:
+                raise BadChannelException("non-unique channel identifier: %s" % s)
 
-            try:
-                channels.add(q.get(code=code))
-            except Channel.DoesNotExist:
-                raise BadChannelException("invalid channel identifier: %s" % s)
+            new_channels.add(matches[0])
 
-    if "name" in spec:
-        check.name = spec["name"]
+    need_save = False
+    if check.pk is None:
+        # Empty pk means we're inserting a new check,
+        # and so do need to save() it:
+        need_save = True
 
-    if "tags" in spec:
+    if "name" in spec and check.name != spec["name"]:
+        check.set_name_slug(spec["name"])
+        need_save = True
+
+    if "tags" in spec and check.tags != spec["tags"]:
         check.tags = spec["tags"]
+        need_save = True
 
-    if "desc" in spec:
+    if "desc" in spec and check.desc != spec["desc"]:
         check.desc = spec["desc"]
+        need_save = True
 
-    if "manual_resume" in spec:
+    if "manual_resume" in spec and check.manual_resume != spec["manual_resume"]:
         check.manual_resume = spec["manual_resume"]
+        need_save = True
+
+    if "methods" in spec and check.methods != spec["methods"]:
+        check.methods = spec["methods"]
+        need_save = True
 
     if "timeout" in spec and "schedule" not in spec:
-        check.kind = "simple"
-        check.timeout = td(seconds=spec["timeout"])
+        new_timeout = td(seconds=spec["timeout"])
+        if check.kind != "simple" or check.timeout != new_timeout:
+            check.kind = "simple"
+            check.timeout = new_timeout
+            need_save = True
 
     if "grace" in spec:
-        check.grace = td(seconds=spec["grace"])
+        new_grace = td(seconds=spec["grace"])
+        if check.grace != new_grace:
+            check.grace = new_grace
+            need_save = True
 
     if "schedule" in spec:
-        check.kind = "cron"
-        check.schedule = spec["schedule"]
-        if "tz" in spec:
-            check.tz = spec["tz"]
+        if check.kind != "cron" or check.schedule != spec["schedule"]:
+            check.kind = "cron"
+            check.schedule = spec["schedule"]
+            need_save = True
 
-    check.alert_after = check.going_down_after()
-    check.save()
+    if "tz" in spec and check.tz != spec["tz"]:
+        check.tz = spec["tz"]
+        need_save = True
+
+    if need_save:
+        check.alert_after = check.going_down_after()
+        check.save()
 
     # This needs to be done after saving the check, because of
     # the M2M relation between checks and channels:
-    if spec.get("channels") == "*":
-        check.assign_all_channels()
-    elif spec.get("channels") == "":
-        check.channel_set.clear()
-    elif channels:
-        check.channel_set.set(channels)
-
-    return check
+    if new_channels is not None:
+        check.channel_set.set(new_channels)
 
 
-@validate_json()
 @authorize_read
 def get_checks(request):
     q = Check.objects.filter(project=request.project)
-    q = q.prefetch_related("channel_set")
+    if not request.readonly:
+        q = q.prefetch_related("channel_set")
 
     tags = set(request.GET.getlist("tag"))
     for tag in tags:
@@ -161,7 +214,7 @@ def create_check(request):
     try:
         _update(check, request.json)
     except BadChannelException as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return JsonResponse({"error": e.message}, status=400)
 
     return JsonResponse(check.to_dict(), status=201 if created else 200)
 
@@ -176,7 +229,7 @@ def checks(request):
 
 
 @cors("GET")
-@validate_json()
+@csrf_exempt
 @authorize
 def channels(request):
     q = Channel.objects.filter(project=request.project)
@@ -184,7 +237,6 @@ def channels(request):
     return JsonResponse({"channels": channels})
 
 
-@validate_json()
 @authorize_read
 def get_check(request, code):
     check = get_object_or_404(Check, code=code)
@@ -195,7 +247,6 @@ def get_check(request, code):
 
 @cors("GET")
 @csrf_exempt
-@validate_json()
 @authorize_read
 def get_check_by_unique_key(request, unique_key):
     checks = Check.objects.filter(project=request.project.id)
@@ -215,12 +266,11 @@ def update_check(request, code):
     try:
         _update(check, request.json)
     except BadChannelException as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return JsonResponse({"error": e.message}, status=400)
 
     return JsonResponse(check.to_dict())
 
 
-@validate_json()
 @authorize
 def delete_check(request, code):
     check = get_object_or_404(Check, code=code)
@@ -257,10 +307,16 @@ def pause(request, code):
     check.last_start = None
     check.alert_after = None
     check.save()
+
+    # After pausing a check we must check if all checks are up,
+    # and Profile.next_nag_date needs to be cleared out:
+    check.project.update_next_nag_dates()
+
     return JsonResponse(check.to_dict())
 
 
 @cors("GET")
+@csrf_exempt
 @validate_json()
 @authorize
 def pings(request, code):
@@ -318,7 +374,6 @@ def flips(request, check):
 
 @cors("GET")
 @csrf_exempt
-@validate_json()
 @authorize_read
 def flips_by_uuid(request, code):
     check = get_object_or_404(Check, code=code)
@@ -327,7 +382,6 @@ def flips_by_uuid(request, code):
 
 @cors("GET")
 @csrf_exempt
-@validate_json()
 @authorize_read
 def flips_by_unique_key(request, unique_key):
     checks = Check.objects.filter(project=request.project.id)
@@ -337,13 +391,40 @@ def flips_by_unique_key(request, unique_key):
     return HttpResponseNotFound()
 
 
+@cors("GET")
+@csrf_exempt
+@authorize_read
+def badges(request):
+    tags = set(["*"])
+    for check in Check.objects.filter(project=request.project):
+        tags.update(check.tags_list())
+
+    key = request.project.badge_key
+    badges = {}
+    for tag in tags:
+        badges[tag] = {
+            "svg": get_badge_url(key, tag),
+            "svg3": get_badge_url(key, tag, with_late=True),
+            "json": get_badge_url(key, tag, fmt="json"),
+            "json3": get_badge_url(key, tag, fmt="json", with_late=True),
+            "shields": get_badge_url(key, tag, fmt="shields"),
+            "shields3": get_badge_url(key, tag, fmt="shields", with_late=True),
+        }
+
+    return JsonResponse({"badges": badges})
+
+
 @never_cache
 @cors("GET")
-def badge(request, badge_key, signature, tag, fmt="svg"):
-    if not check_signature(badge_key, tag, signature):
+def badge(request, badge_key, signature, tag, fmt):
+    if fmt not in ("svg", "json", "shields"):
         return HttpResponseNotFound()
 
-    if fmt not in ("svg", "json", "shields"):
+    with_late = True
+    if len(signature) == 10 and signature.endswith("-2"):
+        with_late = False
+
+    if not check_signature(badge_key, tag, signature):
         return HttpResponseNotFound()
 
     q = Check.objects.filter(project__badge_key=badge_key)
@@ -370,7 +451,7 @@ def badge(request, badge_key, signature, tag, fmt="svg"):
                 break
         elif check_status == "grace":
             grace += 1
-            if status == "up":
+            if status == "up" and with_late:
                 status = "late"
 
     if fmt == "shields":
@@ -380,7 +461,9 @@ def badge(request, badge_key, signature, tag, fmt="svg"):
         elif status == "late":
             color = "important"
 
-        return JsonResponse({"label": label, "message": status, "color": color})
+        return JsonResponse(
+            {"schemaVersion": 1, "label": label, "message": status, "color": color}
+        )
 
     if fmt == "json":
         return JsonResponse(
@@ -393,24 +476,41 @@ def badge(request, badge_key, signature, tag, fmt="svg"):
 
 @csrf_exempt
 @require_POST
-def bounce(request, code):
-    notification = get_object_or_404(Notification, code=code)
+def notification_status(request, code):
+    """ Handle notification delivery status callbacks. """
 
-    # If webhook is more than 10 minutes late, don't accept it:
-    td = timezone.now() - notification.created
-    if td.total_seconds() > 600:
-        return HttpResponseForbidden()
+    try:
+        cutoff = timezone.now() - td(hours=1)
+        notification = Notification.objects.get(code=code, created__gt=cutoff)
+    except Notification.DoesNotExist:
+        # If the notification does not exist, or is more than a hour old,
+        # return HTTP 200 so the other party doesn't retry over and over again:
+        return HttpResponse()
 
-    notification.error = request.body.decode()[:200]
-    notification.save()
+    error, mark_disabled = None, False
 
-    notification.channel.last_error = notification.error
-    if request.GET.get("type") in (None, "Permanent"):
-        # For permanent bounces, mark the channel as not verified, so we
-        # will not try to deliver to it again.
-        notification.channel.email_verified = False
+    # Look for "error" and "mark_disabled" keys:
+    if request.POST.get("error"):
+        error = request.POST["error"][:200]
+        mark_disabled = request.POST.get("mark_disabled")
 
-    notification.channel.save()
+    # Handle "MessageStatus" key from Twilio
+    if request.POST.get("MessageStatus") in ("failed", "undelivered"):
+        status = request.POST["MessageStatus"]
+        error = f"Delivery failed (status={status})."
+
+    # Handle "CallStatus" key from Twilio
+    if request.POST.get("CallStatus") == "failed":
+        error = f"Delivery failed (status=failed)."
+
+    if error:
+        notification.error = error
+        notification.save(update_fields=["error"])
+
+        channel_q = Channel.objects.filter(id=notification.channel_id)
+        channel_q.update(last_error=error)
+        if mark_disabled:
+            channel_q.update(disabled=True)
 
     return HttpResponse()
 

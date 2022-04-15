@@ -1,7 +1,10 @@
-from croniter import croniter
+from datetime import datetime
+
+from cronsim import CronSim
 from django.core.exceptions import ValidationError
 from urllib.parse import urlparse
-from pytz import all_timezones
+
+from hc.lib.tz import all_timezones
 
 
 class WebhookValidator(object):
@@ -25,10 +28,10 @@ class CronExpressionValidator(object):
             raise ValidationError(message=self.message)
 
         try:
-            # Does croniter accept the schedule?
-            it = croniter(value)
+            # Does cronsim accept the schedule?
+            it = CronSim(value, datetime(2000, 1, 1))
             # Can it calculate the next datetime?
-            it.next()
+            next(it)
         except:
             raise ValidationError(message=self.message)
 

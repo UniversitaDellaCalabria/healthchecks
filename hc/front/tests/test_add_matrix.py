@@ -1,4 +1,3 @@
-from json import JSONDecodeError
 from unittest.mock import patch
 
 from django.test.utils import override_settings
@@ -10,7 +9,7 @@ from hc.test import BaseTestCase
 @override_settings(MATRIX_HOMESERVER="fake-homeserver")
 class AddMatrixTestCase(BaseTestCase):
     def setUp(self):
-        super(AddMatrixTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_matrix/" % self.project.code
 
     @override_settings(MATRIX_ACCESS_TOKEN="foo")
@@ -21,6 +20,7 @@ class AddMatrixTestCase(BaseTestCase):
 
     @patch("hc.front.forms.requests.post")
     def test_it_works(self, mock_post):
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"room_id": "fake-room-id"}
 
         form = {"alias": "!foo:example.org"}
@@ -49,3 +49,22 @@ class AddMatrixTestCase(BaseTestCase):
 
         self.assertContains(r, "Matrix server returned status code 429")
         self.assertFalse(Channel.objects.exists())
+
+    @patch("hc.front.forms.requests.post")
+    def test_it_handles_502(self, mock_post):
+        mock_post.return_value.status_code = 502
+
+        form = {"alias": "!foo:example.org"}
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.post(self.url, form)
+
+        self.assertContains(r, "Matrix server returned status code 502")
+        self.assertFalse(Channel.objects.exists())
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

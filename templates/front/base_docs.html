@@ -7,7 +7,7 @@
     <div class="col-sm-3">
 
     <ul class="docs-nav">
-        <li class="nav-header">{% site_name %}</li>
+        <li class="nav-header">{{ site_name }}</li>
         <li {% if section == "introduction" %} class="active"{% endif %}>
             <a href="{% url 'hc-docs' %}">Introduction</a>
         </li>
@@ -25,6 +25,7 @@
         {% include "front/docs_nav_item.html" with slug="python" title="Python" %}
         {% include "front/docs_nav_item.html" with slug="ruby" title="Ruby" %}
         {% include "front/docs_nav_item.html" with slug="php" title="PHP" %}
+        {% include "front/docs_nav_item.html" with slug="go" title="Go" %}
         {% include "front/docs_nav_item.html" with slug="csharp" title="C#" %}
         {% include "front/docs_nav_item.html" with slug="javascript" title="Javascript" %}
         {% include "front/docs_nav_item.html" with slug="powershell" title="PowerShell" %}
@@ -32,7 +33,7 @@
 
         <li class="nav-header">Guides</li>
         {% include "front/docs_nav_item.html" with slug="monitoring_cron_jobs" title="Monitoring cron jobs" %}
-        {% include "front/docs_nav_item.html" with slug="signalling_failures" title="Signalling failures" %}
+        {% include "front/docs_nav_item.html" with slug="signaling_failures" title="Signaling failures" %}
         {% include "front/docs_nav_item.html" with slug="measuring_script_run_time" title="Measuring script run time" %}
         {% include "front/docs_nav_item.html" with slug="attaching_logs" title="Attaching logs" %}
         {% include "front/docs_nav_item.html" with slug="cloning_checks" title="Cloning checks" %}
@@ -40,6 +41,11 @@
 
         <li class="nav-header">Developer Tools</li>
         {% include "front/docs_nav_item.html" with slug="resources" title="Third-party resources" %}
+
+        <li class="nav-header">Self-hosted</li>
+        {% include "front/docs_nav_item.html" with slug="self_hosted" title="Overview" %}
+        {% include "front/docs_nav_item.html" with slug="self_hosted_configuration" title="Configuration" %}
+        {% include "front/docs_nav_item.html" with slug="self_hosted_docker" title="Running with Docker" %}
 
         <li class="nav-header">Reference</li>
         <li><a href="{% url 'hc-docs-cron' %}">Cron syntax cheatsheet</a></li>

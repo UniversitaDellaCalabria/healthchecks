@@ -1,10 +1,11 @@
+from django.test.utils import override_settings
 from hc.api.models import Channel
 from hc.test import BaseTestCase
 
 
 class AddSlackTestCase(BaseTestCase):
     def setUp(self):
-        super(AddSlackTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_slack/" % self.project.code
 
     def test_instructions_work(self):
@@ -30,3 +31,17 @@ class AddSlackTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.post(self.url, form)
         self.assertContains(r, "Enter a valid URL")
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)
+
+    @override_settings(SLACK_ENABLED=False)
+    def test_it_handles_disabled_integration(self):
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 404)

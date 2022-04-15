@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load compress humanize static hc_extras %}
 
-{% block title %}My Checks - {% site_name %}{% endblock %}
+{% block title %}Ping Log - {{ site_name }}{% endblock %}
 
 
 {% block content %}
@@ -41,17 +41,17 @@
 
     {% if events %}
     <div class="table-responsive">
-    <table class="table" id="log">
+    <table class="table" id="log" data-url="{% url 'hc-ping-details' check.code '0' %}">
         {% for event in events %}
         {% if event.n %}
-        <tr class="ok" data-dt="{{ event.created.isoformat }}" data-url="{% url 'hc-ping-details' check.code event.n  %}">
-            <td class="n-cell">
-                <span class="hash">#</span>{{ event.n }}
-            </td>
-            <td class="date"></td>
-            <td class="time"></td>
+        <tr class="ok" data-dt="{{ event.created|isoformat }}">
+            <td>{{ event.n }}</td>
+            <td></td>
+            <td></td>
             <td class="event">
-                {% if event.kind == "fail" %}
+                {% if event.exitstatus %}
+                <span class="label label-danger">Status {{ event.exitstatus }}</span>
+                {% elif event.kind == "fail" %}
                 <span class="label label-danger">Failure</span>
                 {% elif event.kind == "start" %}
                 <span class="label label-start">Started</span>
@@ -64,51 +64,36 @@
             <td class="details">
                 {% if event.delta %}
                 <div class="delta">
-                    <span class="icon-timer"></span>
-                    {{ event.delta|hms }}
+                    <span class="ic-timer"></span> {{ event.delta|hms }}
                 </div>
                 {% endif %}
-
-
                 {% if event.scheme == "email" %}
                     {{ event.ua }}
-                    <span class="ua-body">
-                        {% if event.body %}
-                            -  {{ event.body|truncatechars:150 }}
-                        {% endif %}
-                    </span>
                 {% else %}
-                    {{ event.scheme|upper }}
-                    {{ event.method }}
-                    {% if event.remote_addr %}
-                    from {{ event.remote_addr }}
-                    {% endif %}
-                    <span class="ua-body">
-                        {% if event.ua %}
-                        - {{ event.ua }}
+                    {{ event.scheme|upper }} {{ event.method }}
+                    {% if event.remote_addr %} from {{ event.remote_addr }}{% endif %}
+                    <code>
+                        {% if event.ua %} - {{ event.ua }}{% endif %}
+                        {% if event.body or event.body_raw %}
+                        -  {{ event.get_body|truncatechars:150 }}
+                        {% elif event.object_size %}
+                        - {{ event.object_size }} byte body
                         {% endif %}
-                        {% if event.body %}
-                        -  {{ event.body|truncatechars:150 }}
-                        {% endif %}
-                    </span>
+                    </code>
                 {% endif %}
             </td>
         </tr>
-        {% endif %}
-        {% if event.check_status %}
-        <tr class="missing" data-dt="{{ event.created.isoformat }}">
-            <td class="n-cell">
-                <span class="icon-missing"></span>
-            </td>
-            <td class="date"></td>
-            <td class="time"></td>
-            <td class="alert-info" colspan="2">
-                {% include "front/event_summary.html" %}
-            </td>
+        {% elif event.check_status %}
+        <tr class="missing" data-dt="{{ event.created|isoformat }}">
+            <td><span class="ic-missing"></span></td>
+            <td></td>
+            <td></td>
+            <td class="alert-info" colspan="2">{% include "front/event_summary.html" %}</td>
         </tr>
         {% endif %}
         {% endfor %}
     </table>
+    </div>
 
     {% if show_limit_notice and limit < 1000 %}
     <p class="alert alert-info">
@@ -120,7 +105,6 @@
     </p>
     {% endif %}
 
-    </div>
     {% else %}
         <div class="alert alert-info">Log is empty. This check has not received any pings yet.</div>
     {% endif %}
@@ -142,10 +126,12 @@
 
 {% block scripts %}
 {% compress js %}
-<script src="{% static 'js/jquery-2.1.4.min.js' %}"></script>
+<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
 <script src="{% static 'js/bootstrap.min.js' %}"></script>
 <script src="{% static 'js/moment.min.js' %}"></script>
 <script src="{% static 'js/moment-timezone-with-data-10-year-range.min.js' %}"></script>
+<script src="{% static 'js/purify.min.js' %}"></script>
+<script src="{% static 'js/ping_details.js' %}"></script>
 <script src="{% static 'js/log.js' %}"></script>
 {% endcompress %}
 {% endblock %}

@@ -1,12 +1,14 @@
 from django.contrib import admin
+from django.contrib.auth import login as auth_login
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.db.models import Count, F
+from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
-from hc.accounts.models import Profile, Project
+from hc.accounts.models import Credential, Profile, Project
 
 
 @mark_safe
@@ -43,7 +45,9 @@ class ProfileFieldset(Fieldset):
     name = "User Profile"
     fields = (
         "email",
-        "reports_allowed",
+        "reports",
+        "tz",
+        "theme",
         "next_report_date",
         "nag_period",
         "next_nag_date",
@@ -62,22 +66,25 @@ class TeamFieldset(Fieldset):
         "sms_limit",
         "sms_sent",
         "last_sms_date",
+        "call_limit",
+        "calls_sent",
+        "last_call_date",
     )
 
 
 class NumChecksFilter(admin.SimpleListFilter):
-    title = "Checks"
+    title = "check count"
 
     parameter_name = "num_checks"
 
     def lookups(self, request, model_admin):
         return (
-            ("10", "more than 10"),
-            ("20", "more than 20"),
-            ("50", "more than 50"),
-            ("100", "more than 100"),
-            ("500", "more than 500"),
-            ("1000", "more than 1000"),
+            ("10", "10 or more"),
+            ("20", "20 or more"),
+            ("50", "50 or more"),
+            ("100", "100 or more"),
+            ("500", "500 or more"),
+            ("1000", "1000 or more"),
         )
 
     def queryset(self, request, queryset):
@@ -85,7 +92,7 @@ class NumChecksFilter(admin.SimpleListFilter):
             return
 
         value = int(self.value())
-        return queryset.filter(num_checks__gt=value)
+        return queryset.filter(num_checks__gte=value)
 
 
 @admin.register(Profile)
@@ -106,15 +113,17 @@ class ProfileAdmin(admin.ModelAdmin):
         "projects",
         "invited",
         "sms",
-        "reports_allowed",
+        "reports",
     )
     list_filter = (
         "user__date_joined",
         "last_active_date",
-        "reports_allowed",
+        "reports",
         "check_limit",
         NumChecksFilter,
+        "theme",
     )
+    actions = ("login",)
 
     fieldsets = (ProfileFieldset.tuple(), TeamFieldset.tuple())
 
@@ -144,7 +153,7 @@ class ProfileAdmin(admin.ModelAdmin):
     @mark_safe
     def checks(self, obj):
         s = "%d of %d" % (obj.num_checks, obj.check_limit)
-        if obj.num_checks > 10:
+        if obj.num_checks > 1:
             s = "<b>%s</b>" % s
         return s
 
@@ -153,6 +162,11 @@ class ProfileAdmin(admin.ModelAdmin):
 
     def sms(self, obj):
         return "%d of %d" % (obj.sms_sent, obj.sms_limit)
+
+    def login(self, request, qs):
+        profile = qs.get()
+        auth_login(request, profile.user, "hc.accounts.backends.EmailBackend")
+        return redirect("hc-index")
 
 
 @admin.register(Project)
@@ -198,13 +212,14 @@ class ProjectAdmin(admin.ModelAdmin):
 
 
 class HcUserAdmin(UserAdmin):
-    actions = ["send_report", "send_nag"]
+    actions = ["send_report", "send_nag", "deactivate"]
     list_display = (
         "id",
         "email",
         "usage",
         "date_joined",
         "last_login",
+        "last_active",
         "is_staff",
     )
 
@@ -217,8 +232,12 @@ class HcUserAdmin(UserAdmin):
         qs = super().get_queryset(request)
         qs = qs.annotate(num_checks=Count("project__check", distinct=True))
         qs = qs.annotate(num_channels=Count("project__channel", distinct=True))
+        qs = qs.annotate(last_active_date=F("profile__last_active_date"))
 
         return qs
+
+    def last_active(self, user):
+        return user.last_active_date
 
     @mark_safe
     def usage(self, user):
@@ -236,6 +255,24 @@ class HcUserAdmin(UserAdmin):
 
         self.message_user(request, "%d email(s) sent" % qs.count())
 
+    def deactivate(self, request, qs):
+        for user in qs:
+            user.is_active = False
+            user.set_unusable_password()
+            user.save()
+
+        self.message_user(request, "%d user(s) deactivated" % qs.count())
+
 
 admin.site.unregister(User)
 admin.site.register(User, HcUserAdmin)
+
+
+@admin.register(Credential)
+class CredentialAdmin(admin.ModelAdmin):
+    list_display = ("id", "created", "email", "name")
+    search_fields = ["id", "code", "name", "user__email"]
+    list_filter = ["created"]
+
+    def email(self, obj):
+        return obj.user.email

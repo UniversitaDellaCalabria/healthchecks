@@ -14,8 +14,8 @@ body {
     width: 100%;
     /* Set the fixed height of the footer here */
     height: 84px;
-    color: #AAA;
-    border-top: 1px solid #eee;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-muted);
 }
 
 .footer ul {
@@ -45,19 +45,36 @@ body {
 }
 
 @media (min-width: 768px) {
-    .navbar-default .navbar-nav > li.active > a, .navbar-default .navbar-nav > li > a:hover {
-        border-bottom: 5px solid #eee;
+    .navbar-default .navbar-nav > li.active > a,
+    .navbar-default .navbar-nav > li > a:hover {
+        border-bottom: 5px solid var(--border-muted);
         padding-bottom: 25px;
     }
 }
 
+@media (max-width: 767px) {
+    .navbar-default .navbar-nav > li > a:hover {
+        border-left: 5px solid var(--border-color);
+        padding-left: 10px;
+    }
+
+    .navbar-default .navbar-nav .open .dropdown-menu > li > a:hover {
+        border-left: 5px solid var(--border-color);
+        padding-left: 20px;
+    }
+}
+
+.navbar-default {
+    border-color: transparent;
+    border-bottom-color:  var(--border-muted);
+}
+
 .navbar-default .navbar-brand, .navbar-default .navbar-brand:hover {
-    color: #333;
     font-weight: bold;
 }
 
-.navbar-text {
-    font-size: small;
+.navbar-collapse {
+    box-shadow: none;
 }
 
 #nav-sign-up {
@@ -89,8 +106,13 @@ body {
 }
 
 #broken-channels > a {
-    color: #a94442;
+    color: hsl(1.2, 43.8%, 46.1%);
 }
+
+#broken-channels > a:hover {
+    color: hsl(1.2, 53.8%, 56.1%);
+}
+
 
 .page-checks .container-fluid, .page-details .container-fluid {
     /* Fluid below 1320px, but max width capped to 1320px ... */
@@ -103,24 +125,23 @@ body {
     width: 24px;
 }
 
-.status.icon-up, .status.icon-started { color: #5cb85c; }
-.status.icon-new, .status.icon-paused { color: #CCC; }
-.status.icon-grace { color: #f0ad4e; }
-.status.icon-down { color: #d9534f; }
+.status.ic-up, .status.ic-started { color: #5cb85c; }
+.status.ic-new, .status.ic-paused { color: var(--status-new-color); }
+.status.ic-grace { color: #f0ad4e; }
+.status.ic-down { color: #d9534f; }
 
 .label.label-start {
-    background-color: #FFF;
-    color: #117a3f;;
+    color: var(--label-start-color);
     border: 1px solid #117a3f;
 }
 
 .label.label-ign {
-    background: #e0e0e0;
-    color: #333;
+    background: var(--label-ign-bg);
+    color: var(--label-ign-color);
 }
 
 .hc-dialog {
-    background: #FFF;
+    background-color: var(--panel-bg);
     padding: 2em;
     margin-top: 100px;
 }
@@ -138,7 +159,7 @@ pre {
 }
 
 .nav-pills > li > a {
-    color: #888;
+    color: var(--text-muted);
 }
 
 .jumbotron p {
@@ -146,7 +167,7 @@ pre {
 }
 
 #debug-warning {
-    background: #eeeeee;
+    background: var(--debug-warning-bg);
     text-align: center;
     font-size: small;
     padding: 2px 0;
@@ -215,4 +236,24 @@ pre {
     to {
         opacity: 0;
     }
+}
+
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:hover,
+.nav-tabs > li.active > a:focus,
+.nav-pills > li.active > a,
+.nav-pills > li.active > a:hover,
+.nav-pills > li.active > a:focus {
+    outline: 0;
+}
+
+/* no button outlines in Chrome--  */
+
+.btn.focus,
+.btn:focus,
+.btn.active,
+.btn.active:focus,
+.btn:active.focus,
+.btn:active:focus {
+    outline: 0;
 }

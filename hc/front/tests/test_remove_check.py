@@ -4,7 +4,7 @@ from hc.test import BaseTestCase
 
 class RemoveCheckTestCase(BaseTestCase):
     def setUp(self):
-        super(RemoveCheckTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
         self.remove_url = "/checks/%s/remove/" % self.check.code
         self.redirect_url = "/projects/%s/checks/" % self.project.code
@@ -51,3 +51,11 @@ class RemoveCheckTestCase(BaseTestCase):
         self.client.login(username="bob@example.org", password="password")
         r = self.client.post(self.remove_url)
         self.assertRedirects(r, self.redirect_url)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.remove_url)
+        self.assertEqual(r.status_code, 403)

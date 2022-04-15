@@ -1,6 +1,6 @@
 import json
 
-from hc.api.models import Check, Channel, Notification
+from hc.api.models import Channel
 from hc.test import BaseTestCase
 
 
@@ -108,3 +108,56 @@ class ChannelsTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.channels_url)
         self.assertContains(r, "broken-channels", status_code=200)
+
+    def test_it_hides_actions_from_readonly_users(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        Channel.objects.create(project=self.project, kind="webhook", value="{}")
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.channels_url)
+
+        self.assertNotContains(r, "Add Integration", status_code=200)
+        self.assertNotContains(r, "ic-delete")
+        self.assertNotContains(r, "edit_webhook")
+
+    def test_it_shows_down_only_note_for_sms(self):
+        channel = Channel(project=self.project, kind="sms")
+        channel.value = json.dumps({"value": "+123123123", "up": False, "down": True})
+        channel.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.channels_url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "(down only)")
+
+    def test_it_shows_up_only_note_for_sms(self):
+        channel = Channel(project=self.project, kind="sms")
+        channel.value = json.dumps({"value": "+123123123", "up": True, "down": False})
+        channel.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.channels_url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "(up only)")
+
+    def test_it_shows_disabled_note(self):
+        ch = Channel(kind="slack", project=self.project)
+        ch.value = "https://example.org"
+        ch.disabled = True
+        ch.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.channels_url)
+        self.assertContains(r, "label-danger", status_code=200)
+
+    def test_it_shows_fix_button_for_disabled_email(self):
+        ch = Channel(kind="email", project=self.project)
+        ch.value = "bob@example.org"
+        ch.disabled = True
+        ch.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.channels_url)
+        self.assertContains(r, "Fix&hellip;", status_code=200)

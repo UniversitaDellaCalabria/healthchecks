@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static compress hc_extras %}
 
-{% block title %}Pricing - It's Free! - {% site_name %}{% endblock %}
+{% block title %}Pricing - It's Free! - {{ site_name }}{% endblock %}
 
 {% block description %}
     <meta name="description" content="With the Free plan, you can monitor up to 20 services for free. Paid plans lift the limits significantly and are reasonably priced. Special offer for open source projects.">
@@ -22,7 +22,7 @@
                         {% if sub.plan_id %}
                             Your account is currently on the
                             <strong>{{ sub.plan_name }}</strong>
-                            plan. Thank you for supporting {% site_name %}!
+                            plan. Thank you for supporting {{ site_name }}!
                         {% else %}
                             Your account is currently on the
                             <strong>{{ sub.plan_name|default:"Hobbyist" }}</strong> plan.
@@ -77,19 +77,20 @@
                         <h1>Hobbyist</h1>
                         <h2>$0 <span class="mo">/ month</span></h2>
                     </div>
-                    <ul class="list-group text-center">
-                        <li class="list-group-item"><i class="fa fa-check"></i> 20 checks</li>
-                        <li class="list-group-item">
+                    <ul class="text-center">
+                        <li><i class="fa fa-check"></i> 20 checks</li>
+                        <li>
                             <span data-help="team-size-help">3 team members</span>
                         </li>
-                        <li class="list-group-item">
+                        <li>
                             <span data-help="log-limit-help">100 log entries per check</span>
                         </li>
-                        <li class="list-group-item">API access</li>
-                        <li class="list-group-item">
+                        <li>API access</li>
+                        <li>
                             <span data-help="sms-help">5 SMS &amp; WhatsApp credits</span>
                         </li>
-                        <li class="list-group-item">&nbsp;</li>
+                        <li>&nbsp;</li>
+                        <li>&nbsp;</li>
                     </ul>
 
                     {% if not request.user.is_authenticated %}
@@ -110,19 +111,22 @@
                             <span class="mo">/ month</span>
                         </h2>
                     </div>
-                    <ul class="list-group text-center">
-                        <li class="list-group-item"><i class="fa fa-check"></i> 20 checks</li>
-                        <li class="list-group-item">
+                    <ul class="text-center">
+                        <li><i class="fa fa-check"></i> 20 checks</li>
+                        <li>
                             <span data-help="team-size-help">3 team members</span>
                         </li>
-                        <li class="list-group-item">
+                        <li>
                             <span data-help="log-limit-help">1000 log entries per check</span>
                         </li>
-                        <li class="list-group-item">API access</li>
-                        <li class="list-group-item">
+                        <li>API access</li>
+                        <li>
                             <span data-help="sms-help">5 SMS &amp; WhatsApp credits</span>
                         </li>
-                        <li class="list-group-item">Email support</li>
+                        <li>
+                            <span data-help="phone-call-help">5 phone call credits</span>
+                        </li>
+                        <li>Email support</li>
                     </ul>
 
                     {% if not request.user.is_authenticated %}
@@ -146,19 +150,22 @@
                         </h2>
                     </div>
 
-                    <ul class="list-group text-center">
-                        <li class="list-group-item">100 checks</li>
-                        <li class="list-group-item">
+                    <ul class="text-center">
+                        <li>100 checks</li>
+                        <li>
                             <span data-help="team-size-help">10 team members</span>
                         </li>
-                        <li class="list-group-item">
+                        <li>
                             <span data-help="log-limit-help">1000 log entries per check</span>
                         </li>
-                        <li class="list-group-item">API access</li>
-                        <li class="list-group-item">
+                        <li>API access</li>
+                        <li>
                             <span data-help="sms-help">50 SMS &amp; WhatsApp credits</span>
                         </li>
-                        <li class="list-group-item">Email support</li>
+                        <li>
+                            <span data-help="phone-call-help">20 phone call credits</span>
+                        </li>
+                        <li>Email support</li>
                     </ul>
 
                     {% if not request.user.is_authenticated %}
@@ -182,19 +189,22 @@
                         </h2>
                     </div>
 
-                    <ul class="list-group text-center">
-                        <li class="list-group-item">1000 checks</li>
-                        <li class="list-group-item">
+                    <ul class="text-center">
+                        <li>1000 checks</li>
+                        <li>
                             <span data-help="team-size-help">Unlimited team members</span>
                         </li>
-                        <li class="list-group-item">
+                        <li>
                             <span data-help="log-limit-help">1000 log entries per check</span>
                         </li>
-                        <li class="list-group-item">API access</li>
-                        <li class="list-group-item">
+                        <li>API access</li>
+                        <li>
                             <span data-help="sms-help">500 SMS &amp; WhatsApp credits</span>
                         </li>
-                        <li class="list-group-item">Priority email support</li>
+                        <li>
+                            <span data-help="phone-call-help">100 phone call credits</span>
+                        </li>
+                        <li>Priority email support</li>
                     </ul>
 
                     {% if not request.user.is_authenticated %}
@@ -226,7 +236,7 @@
                     <a href="https://braintreepayments.com">Braintree</a>,
                     a division of PayPal. Your credit card or PayPal
                     credentials are never directly handled by or
-                    stored on {% site_name %} servers.
+                    stored on {{ site_name }} servers.
                 </p>
                 <p>
                     Braintree is a validated Level 1 PCI DSS Compliant
@@ -248,7 +258,7 @@
                 <p>
                     Both plans are similar. The "Supporter" plan is offered
                     in case "Hobbyist" fits your usage but you wish
-                    to support {% site_name %} financially.
+                    to support {{ site_name }} financially.
                 </p>
 
 
@@ -264,7 +274,7 @@
 
                 <h2>What is the "log entries per check" number?</h2>
                 <p>
-                    For each of your checks, {% site_name %} keeps a
+                    For each of your checks, {{ site_name }} keeps a
                     historic log of the received pings. The log can be useful
                     for auditing past activity of your cron jobs.
                 </p>
@@ -297,16 +307,20 @@
 </div>
 
 <div id="log-limit-help" class="hidden">
-    The maximum number of log entries {% site_name %} will store for each check.
+    The maximum number of log entries {{ site_name }} will store for each check.
     When the limit is reached, the oldest log entries start getting removed to make
     room for new ones.
 </div>
 
 <div id="sms-help" class="hidden">
-    <p>The maximum number of SMS &amp; WhatsApp notifications per month.</p>
+    <p>The maximum number of SMS and WhatsApp notifications per month.</p>
 
-    <p>The limit is applied to the combined number of sent SMS and
-    WhatsApp notifications. </p>
+    <p>The limit is applied to the combined number of sent SMS and WhatsApp
+    notifications.</p>
+</div>
+
+<div id="phone-call-help" class="hidden">
+    <p>The maximum number of phone call notifications per month.</p>
 </div>
 
 {% if not request.user.is_authenticated %}
@@ -316,7 +330,7 @@
 
 {% block scripts %}
 {% compress js %}
-<script src="{% static 'js/jquery-2.1.4.min.js' %}"></script>
+<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
 <script src="{% static 'js/bootstrap.min.js' %}"></script>
 <script src="{% static 'js/pricing.js' %}"></script>
 <script src="{% static 'js/signup.js' %}"></script>

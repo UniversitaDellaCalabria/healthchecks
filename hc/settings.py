@@ -2,11 +2,10 @@
 Django settings for healthchecks project.
 
 For the full list of settings and their values, see
-https://docs.djangoproject.com/en/2.1/ref/settings
+https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 
 import os
-import warnings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -64,12 +63,15 @@ INSTALLED_APPS = (
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "hc.accounts.middleware.CustomHeaderMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
     "hc.accounts.middleware.TeamAccessMiddleware",
 ]
 
@@ -85,6 +87,10 @@ else:
     AUTHENTICATION_BACKENDS = (
         "hc.accounts.backends.EmailBackend",
         "hc.accounts.backends.ProfileBackend")
+
+REMOTE_USER_HEADER = os.getenv("REMOTE_USER_HEADER")
+if REMOTE_USER_HEADER:
+    AUTHENTICATION_BACKENDS = ("hc.accounts.backends.CustomHeaderBackend",)
 
 ROOT_URLCONF = "hc.urls"
 
@@ -112,6 +118,7 @@ TEST_RUNNER = "hc.api.tests.CustomRunner"
 
 # Default database engine is SQLite. So one can just check out code,
 # install requirements.txt and do manage.py runserver and it works
+DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -158,6 +165,7 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True
+LOCALE_PATHS = (os.path.join(BASE_DIR, "locale"),)
 
 # GETTEXT LOCALIZATION
 MIDDLEWARE.append('django.middleware.locale.LocaleMiddleware')
@@ -168,6 +176,7 @@ LOCALE_PATHS = (
 
 SITE_ROOT = os.getenv("SITE_ROOT", "http://localhost:8000")
 SITE_NAME = os.getenv("SITE_NAME", "Mychecks")
+SITE_LOGO_URL = os.getenv("SITE_LOGO_URL")
 MASTER_BADGE_LABEL = os.getenv("MASTER_BADGE_LABEL", SITE_NAME)
 PING_ENDPOINT = os.getenv("PING_ENDPOINT", SITE_ROOT + "/ping/")
 PING_EMAIL_DOMAIN = os.getenv("PING_EMAIL_DOMAIN", "localhost")
@@ -183,11 +192,14 @@ STATICFILES_FINDERS = (
 COMPRESS_OFFLINE = True
 COMPRESS_CSS_HASHING_METHOD = "content"
 
-# Discord integration
-DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
-DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 
-# Email integration
+def immutable_file_test(path, url):
+    return url.startswith("/static/CACHE/") or url.startswith("/static/fonts/")
+
+
+WHITENOISE_IMMUTABLE_FILE_TEST = immutable_file_test
+
+# SMTP credentials for sending email
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = envint("EMAIL_PORT", "587")
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
@@ -195,9 +207,55 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = envbool("EMAIL_USE_TLS", "True")
 EMAIL_USE_VERIFICATION = envbool("EMAIL_USE_VERIFICATION", "True")
 
-# Slack integration
-SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
-SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
+# WebAuthn
+RP_ID = os.getenv("RP_ID")
+
+# Object storage credentials for storing large ping bodies.
+# (Optional. If not specified, will store ping bodies in the database.)
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+S3_ENDPOINT = os.getenv("S3_ENDPOINT")
+S3_REGION = os.getenv("S3_REGION")
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_TIMEOUT = envint("S3_TIMEOUT", 60)
+
+# Integrations
+
+# Apprise
+APPRISE_ENABLED = envbool("APPRISE_ENABLED", "False")
+
+# Discord integration
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+
+
+# LINE Notify
+LINENOTIFY_CLIENT_ID = os.getenv("LINENOTIFY_CLIENT_ID")
+LINENOTIFY_CLIENT_SECRET = os.getenv("LINENOTIFY_CLIENT_SECRET")
+
+# Matrix
+MATRIX_HOMESERVER = os.getenv("MATRIX_HOMESERVER")
+MATRIX_USER_ID = os.getenv("MATRIX_USER_ID")
+MATRIX_ACCESS_TOKEN = os.getenv("MATRIX_ACCESS_TOKEN")
+
+# Mattermost
+MATTERMOST_ENABLED = envbool("MATTERMOST_ENABLED", "True")
+
+# MS Teams
+MSTEAMS_ENABLED = envbool("MSTEAMS_ENABLED", "True")
+
+# Opsgenie
+OPSGENIE_ENABLED = envbool("OPSGENIE_ENABLED", "True")
+
+# PagerTree
+PAGERTREE_ENABLED = envbool("PAGERTREE_ENABLED", "True")
+
+# PagerDuty
+PD_ENABLED = envbool("PD_ENABLED", "True")
+PD_APP_ID = os.getenv("PD_APP_ID")
+
+# Prometheus
+PROMETHEUS_ENABLED = envbool("PROMETHEUS_ENABLED", "True")
 
 # Pushover integration
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
@@ -209,6 +267,20 @@ PUSHOVER_EMERGENCY_EXPIRATION = int(os.getenv("PUSHOVER_EMERGENCY_EXPIRATION", "
 PUSHBULLET_CLIENT_ID = os.getenv("PUSHBULLET_CLIENT_ID")
 PUSHBULLET_CLIENT_SECRET = os.getenv("PUSHBULLET_CLIENT_SECRET")
 
+# Local shell commands
+SHELL_ENABLED = envbool("SHELL_ENABLED", "False")
+
+# Signal
+SIGNAL_CLI_SOCKET = os.getenv("SIGNAL_CLI_SOCKET")
+
+# Slack integration
+SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
+SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
+SLACK_ENABLED = envbool("SLACK_ENABLED", "True")
+
+# Spike.sh
+SPIKE_ENABLED = envbool("SPIKE_ENABLED", "True")
+
 # Telegram integration -- override in local_settings.py
 TELEGRAM_BOT_NAME = os.getenv("TELEGRAM_BOT_NAME", "ExampleBot")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -219,25 +291,18 @@ TWILIO_AUTH = os.getenv("TWILIO_AUTH")
 TWILIO_FROM = os.getenv("TWILIO_FROM")
 TWILIO_USE_WHATSAPP = envbool("TWILIO_USE_WHATSAPP", "False")
 
-# PagerDuty
-PD_VENDOR_KEY = os.getenv("PD_VENDOR_KEY")
-
 # Trello
 TRELLO_APP_KEY = os.getenv("TRELLO_APP_KEY")
 
-# Matrix
-MATRIX_HOMESERVER = os.getenv("MATRIX_HOMESERVER")
-MATRIX_USER_ID = os.getenv("MATRIX_USER_ID")
-MATRIX_ACCESS_TOKEN = os.getenv("MATRIX_ACCESS_TOKEN")
+# VictorOps
+VICTOROPS_ENABLED = envbool("VICTOROPS_ENABLED", "True")
 
-# Apprise
-APPRISE_ENABLED = envbool("APPRISE_ENABLED", "False")
+# Webhooks
+WEBHOOKS_ENABLED = envbool("WEBHOOKS_ENABLED", "True")
 
-# Local shell commands
-SHELL_ENABLED = envbool("SHELL_ENABLED", "False")
+# Zulip
+ZULIP_ENABLED = envbool("ZULIP_ENABLED", "True")
 
-
+# Read additional configuration from hc/local_settings.py if it exists
 if os.path.exists(os.path.join(BASE_DIR, "hc/local_settings.py")):
     from .local_settings import *
-else:
-    warnings.warn("local_settings.py not found, using defaults")

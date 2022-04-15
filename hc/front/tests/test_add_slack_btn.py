@@ -5,7 +5,7 @@ from hc.test import BaseTestCase
 @override_settings(SLACK_CLIENT_ID="fake-client-id")
 class AddSlackBtnTestCase(BaseTestCase):
     def setUp(self):
-        super(AddSlackBtnTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_slack_btn/" % self.project.code
 
     def test_instructions_work(self):
@@ -23,6 +23,20 @@ class AddSlackBtnTestCase(BaseTestCase):
 
     @override_settings(SLACK_CLIENT_ID=None)
     def test_it_requires_client_id(self):
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 404)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)
+
+    @override_settings(SLACK_ENABLED=False)
+    def test_it_handles_disabled_integration(self):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 404)

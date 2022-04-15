@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 from hc.api.models import Channel, Check, Notification, Ping
 from hc.test import BaseTestCase
@@ -6,23 +7,55 @@ from hc.test import BaseTestCase
 
 class LogTestCase(BaseTestCase):
     def setUp(self):
-        super(LogTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
 
-        ping = Ping.objects.create(owner=self.check)
+        self.ping = Ping.objects.create(owner=self.check, n=1)
+        self.ping.body_raw = b"hello world"
 
         # Older MySQL versions don't store microseconds. This makes sure
         # the ping is older than any notifications we may create later:
-        ping.created = "2000-01-01T00:00:00+00:00"
-        ping.save()
+        self.ping.created = "2000-01-01T00:00:00+00:00"
+        self.ping.save()
 
         self.url = "/checks/%s/log/" % self.check.code
 
     def test_it_works(self):
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertContains(r, "Browser's time zone", status_code=200)
+        self.assertContains(r, "hello world")
+
+    def test_it_displays_body(self):
+        self.ping.body = "hello world"
+        self.ping.body_raw = None
+        self.ping.save()
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertContains(r, "Browser's time zone", status_code=200)
+        self.assertContains(r, "hello world")
+
+    @patch("hc.api.models.get_object")
+    def test_it_does_not_load_bodies_from_object_storage(self, get_object):
+        self.ping.body_raw = None
+        self.ping.object_size = 1234
+        self.ping.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertContains(r, "1234 byte body")
+
+        self.assertFalse(get_object.called)
+
+    def test_it_displays_email(self):
+        self.ping.scheme = "email"
+        self.ping.ua = "email from server@example.org"
+        self.ping.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertContains(r, "email from server@example.org", status_code=200)
 
     def test_team_access_works(self):
 

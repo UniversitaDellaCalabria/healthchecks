@@ -84,11 +84,11 @@ def get_badge_svg(tag, status):
     w1 = get_width(tag) + 10
     w2 = get_width(status) + 10
     ctx = {
-        "width": w1 + w2,
-        "tag_width": w1,
-        "status_width": w2,
-        "tag_center_x": w1 / 2,
-        "status_center_x": w1 + w2 / 2,
+        "width": str(w1 + w2),
+        "tag_width": str(w1),
+        "status_width": str(w2),
+        "tag_center_x": str(w1 / 2),
+        "status_center_x": str(w1 + w2 / 2),
         "tag": tag,
         "status": status,
         "color": COLORS[status],
@@ -99,16 +99,17 @@ def get_badge_svg(tag, status):
 
 def check_signature(username, tag, sig):
     ours = base64_hmac(str(username), tag, settings.SECRET_KEY)
-    ours = ours[:8]
-    return ours == sig
+    return ours[:8] == sig[:8]
 
 
-def get_badge_url(username, tag, fmt="svg"):
-    sig = base64_hmac(str(username), tag, settings.SECRET_KEY)
+def get_badge_url(username, tag, fmt="svg", with_late=False):
+    sig = base64_hmac(str(username), tag, settings.SECRET_KEY)[:8]
+    if not with_late:
+        sig += "-2"
 
     if tag == "*":
-        url = reverse("hc-badge-all", args=[username, sig[:8], fmt])
+        url = reverse("hc-badge-all", args=[username, sig, fmt])
     else:
-        url = reverse("hc-badge", args=[username, sig[:8], tag, fmt])
+        url = reverse("hc-badge", args=[username, sig, tag, fmt])
 
     return settings.SITE_ROOT + url

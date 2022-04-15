@@ -1,22 +1,27 @@
+from datetime import timedelta as td
+
+from django.utils import timezone
 from hc.api.models import Check
 from hc.test import BaseTestCase
-from datetime import timedelta as td
-from django.utils import timezone
 
 
 class MyChecksTestCase(BaseTestCase):
     def setUp(self):
-        super(MyChecksTestCase, self).setUp()
+        super().setUp()
         self.check = Check(project=self.project, name="Alice Was Here")
+        self.check.slug = "alice-was-here"
         self.check.save()
 
-        self.url = "/projects/%s/checks/" % self.project.code
+        self.url = f"/projects/{self.project.code}/checks/"
 
     def test_it_works(self):
         for email in ("alice@example.org", "bob@example.org"):
             self.client.login(username=email, password="password")
             r = self.client.get(self.url)
             self.assertContains(r, "Alice Was Here", status_code=200)
+            self.assertContains(r, str(self.check.code), status_code=200)
+            # The pause button:
+            self.assertContains(r, "btn btn-default pause", status_code=200)
 
         # last_active_date should have been set
         self.profile.refresh_from_db()
@@ -53,7 +58,7 @@ class MyChecksTestCase(BaseTestCase):
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
-        self.assertContains(r, "icon-up")
+        self.assertContains(r, "ic-up")
 
     def test_it_shows_red_check(self):
         self.check.last_ping = timezone.now() - td(days=3)
@@ -62,7 +67,7 @@ class MyChecksTestCase(BaseTestCase):
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
-        self.assertContains(r, "icon-down")
+        self.assertContains(r, "ic-down")
 
     def test_it_shows_amber_check(self):
         self.check.last_ping = timezone.now() - td(days=1, minutes=30)
@@ -71,7 +76,7 @@ class MyChecksTestCase(BaseTestCase):
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
-        self.assertContains(r, "icon-grace")
+        self.assertContains(r, "ic-grace")
 
     def test_it_hides_add_check_button(self):
         self.profile.check_limit = 0
@@ -79,7 +84,7 @@ class MyChecksTestCase(BaseTestCase):
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
-        self.assertContains(r, "Check limit reached", status_code=200)
+        self.assertContains(r, "There are more things to monitor", status_code=200)
 
     def test_it_saves_sort_field(self):
         self.client.login(username="alice@example.org", password="password")
@@ -125,3 +130,55 @@ class MyChecksTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertContains(r, """<div class="btn btn-xs grace ">foo</div>""")
+
+    def test_it_hides_actions_from_readonly_users(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+
+        self.assertNotContains(r, "Add Check", status_code=200)
+
+        # The pause button:
+        self.assertNotContains(r, "btn btn-default pause", status_code=200)
+
+    def test_it_shows_slugs(self):
+        self.project.show_slugs = True
+        self.project.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertContains(r, "alice-was-here")
+        self.assertNotContains(r, "(not unique)")
+
+    def test_it_shows_not_unique_note(self):
+        self.project.show_slugs = True
+        self.project.save()
+
+        dupe = Check(project=self.project, name="Alice Was Here")
+        dupe.slug = "alice-was-here"
+        dupe.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertContains(r, "alice-was-here")
+        self.assertContains(r, "(not unique)")
+
+    def test_it_saves_url_format_preference(self):
+        self.client.login(username="alice@example.org", password="password")
+        self.client.get(self.url + "?urls=slug")
+
+        self.project.refresh_from_db()
+        self.assertTrue(self.project.show_slugs)
+
+    def test_it_outputs_period_grace_as_integers(self):
+        self.check.timeout = td(seconds=123)
+        self.check.grace = td(seconds=456)
+        self.check.save()
+
+        self.client.login(username="alice@example.org", password="password")
+        r = self.client.get(self.url)
+
+        self.assertContains(r, 'data-timeout="123"')
+        self.assertContains(r, 'data-grace="456"')

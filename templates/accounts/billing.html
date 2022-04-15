@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load compress static hc_extras %}
 
-{% block title %}Account Settings - {% site_name %}{% endblock %}
+{% block title %}Account Settings - {{ site_name }}{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -17,6 +17,7 @@
     <div class="col-sm-3">
         <ul class="nav nav-pills nav-stacked">
             <li><a href="{% url 'hc-profile' %}">Account</a></li>
+            <li><a href="{% url 'hc-appearance' %}">Appearance</a></li>
             <li class="active"><a href="{% url 'hc-billing' %}">Billing</a></li>
             <li><a href="{% url 'hc-notifications' %}">Email Reports</a></li>
         </ul>
@@ -421,7 +422,7 @@
 
                         <div class="col-sm-6">
                             <div class="form-group">
-                                <label for="postal_Code">
+                                <label for="postal_code">
                                     Postal Code
                                 </label>
                                 <input
@@ -545,7 +546,7 @@
 {% block scripts %}
 <script src="https://js.braintreegateway.com/web/dropin/1.20.0/js/dropin.min.js"></script>
 {% compress js %}
-<script src="{% static 'js/jquery-2.1.4.min.js' %}"></script>
+<script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
 <script src="{% static 'js/bootstrap.min.js' %}"></script>
 <script src="{% static 'js/billing.js' %}"></script>
 {% endcompress %}

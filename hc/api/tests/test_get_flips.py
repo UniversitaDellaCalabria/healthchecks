@@ -8,7 +8,7 @@ from hc.test import BaseTestCase
 
 class GetFlipsTestCase(BaseTestCase):
     def setUp(self):
-        super(GetFlipsTestCase, self).setUp()
+        super().setUp()
 
         self.a1 = Check(project=self.project, name="Alice 1")
         self.a1.timeout = td(seconds=3600)
@@ -53,7 +53,7 @@ class GetFlipsTestCase(BaseTestCase):
         self.assertEqual(r.status_code, 200)
 
     def test_it_rejects_post(self):
-        r = self.client.post(self.url, HTTP_X_API_KEY="X" * 32)
+        r = self.csrf_client.post(self.url, HTTP_X_API_KEY="X" * 32)
         self.assertEqual(r.status_code, 405)
 
     def test_it_rejects_non_integer_start(self):
@@ -63,6 +63,13 @@ class GetFlipsTestCase(BaseTestCase):
     def test_it_rejects_negative_start(self):
         r = self.get(qs="?start=-123")
         self.assertEqual(r.status_code, 400)
+
+    def test_it_filters_by_start(self):
+        r = self.get(qs="?start=1591014300")  # 2020-06-01 12:25:00
+        self.assertEqual(r.status_code, 200)
+
+        doc = r.json()
+        self.assertEqual(doc["flips"], [])
 
     def test_it_rejects_huge_start(self):
         r = self.get(qs="?start=12345678901234567890")
@@ -75,3 +82,7 @@ class GetFlipsTestCase(BaseTestCase):
     def test_it_rejects_huge_seconds(self):
         r = self.get(qs="?seconds=12345678901234567890")
         self.assertEqual(r.status_code, 400)
+
+    def test_it_handles_missing_api_key(self):
+        r = self.client.get(self.url)
+        self.assertContains(r, "missing api key", status_code=401)

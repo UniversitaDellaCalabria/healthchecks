@@ -7,19 +7,10 @@
     font-size: 13px;
 }
 
-#log th {
-    border-top: 0;
-    border-bottom: 1px solid #E5E5E5;
-}
-
 #log td {
-    color: #444;
     position: relative;
     border: 0;
-    border-bottom: 1px solid #E5E5E5;
-}
-
-#log .date, #log .time {
+    border-bottom: 1px solid var(--border-muted);
     white-space: nowrap;
 }
 
@@ -44,10 +35,10 @@
     text-overflow: ellipsis;
 }
 
-#log .details span.ua-body {
+#log .details code {
     font-family: "Lucida Console", Monaco, monospace;
     font-size: 11.7px;
-    color: #888;
+    color: var(--text-muted);
 }
 
 #log tr.ok {
@@ -55,13 +46,12 @@
 }
 
 #log tr.ok:hover td {
-    background-color: #f5f5f5;
+    background-color: var(--table-bg-hover);
 }
-
 
 #log tr.missing td {
     color: #d9534f;
-    background: #fff3f2;
+    background: var(--log-missing-bg);
 }
 
 #log td.event {
@@ -69,12 +59,16 @@
     width: 1%;
 }
 
-#log .n-cell {
-    font-family: monospace;
+#log td:first-child {
     text-align: right;
 }
 
-#log .hash {
+#log tr.ok td:first-child {
+    font-family: "Lucida Console", Monaco, monospace;
+}
+
+#log tr.ok td:first-child::before {
+    content:  "#";
     color: #aaa;
 }
 

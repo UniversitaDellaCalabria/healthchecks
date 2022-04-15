@@ -11,44 +11,23 @@
     padding-bottom: 24px;
 }
 
-.page-project .icon-ok {
+.page-project .ic-ok {
     color: #5cb85c;
 }
 
 #close-account, #remove-project {
     margin-left: 24px;
     border-color: #d43f3a;
-    color: #d43f3a;
+    color: var(--btn-remove-color);
+    background-color:  var(--btn-remove-bg);
 }
 
 #close-account:hover, #remove-project:hover {
-    background-color: #ffebea;
-}
-
-.table.badges th {
-    border-top: 0;
-    color: #777777;
-    font-weight: normal;
-    font-size: 12px;
-    padding-top: 32px;
-}
-
-#badges-json, #badges-shields {
-    display: none;
-}
-
-#badges-shields label:first-child {
-    margin: 20px 0 10px 0;
-}
-
-.json-response code {
-    display: inline-block;
-    background: #eee;
-    padding: 3px;
+    background-color: var(--btn-remove-hover);
 }
 
 .invite-suggestion {
-    color: #888;
+    color: var(--text-muted);
 }
 
 #suggestions-row td {
@@ -59,6 +38,17 @@
 
 #team-table th {
     border-top: 0;
+}
+
+#team-table .email {
+    max-width: 340px;
+    word-wrap: break-word;
+
+}
+
+.page-project .panel-footer {
+    max-width: 100%;
+    word-wrap: break-word;
 }
 
 #transfer-request {

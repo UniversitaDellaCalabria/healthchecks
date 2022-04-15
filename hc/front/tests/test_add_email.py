@@ -3,20 +3,22 @@ import json
 from django.core import mail
 from django.test.utils import override_settings
 
-from hc.api.models import Channel
+from hc.api.models import Channel, Check
 from hc.test import BaseTestCase
 
 
 class AddEmailTestCase(BaseTestCase):
     def setUp(self):
-        super(AddEmailTestCase, self).setUp()
-        self.url = "/projects/%s/add_email/" % self.project.code
+        super().setUp()
+        self.check = Check.objects.create(project=self.project)
+        self.url = f"/projects/{self.project.code}/add_email/"
 
     def test_instructions_work(self):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertContains(r, "Get an email message")
         self.assertContains(r, "Requires confirmation")
+        self.assertContains(r, "Set Up Email Notifications")
 
     def test_it_creates_channel(self):
         form = {"value": "dan@example.org", "down": "true", "up": "true"}
@@ -39,6 +41,9 @@ class AddEmailTestCase(BaseTestCase):
         self.assertTrue(email.subject.startswith("Verify email address on"))
         # Make sure we're sending to an email address, not a JSON string:
         self.assertEqual(email.to[0], "dan@example.org")
+
+        # Make sure it calls assign_all_checks
+        self.assertEqual(c.checks.count(), 1)
 
     def test_team_access_works(self):
         form = {"value": "bob@example.org", "down": "true", "up": "true"}
@@ -106,9 +111,17 @@ class AddEmailTestCase(BaseTestCase):
         # Email should *not* have been sent
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_it_rejects_unchecked_up_and_dwon(self):
+    def test_it_rejects_unchecked_up_and_down(self):
         form = {"value": "alice@example.org"}
 
         self.client.login(username="alice@example.org", password="password")
         r = self.client.post(self.url, form)
         self.assertContains(r, "Please select at least one.")
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.role = "r"
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

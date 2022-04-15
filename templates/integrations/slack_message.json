@@ -1,7 +1,7 @@
 {% load hc_extras humanize %}
 {
     "username": "{% site_name %}",
-    "icon_url": "{% site_root %}/static/img/logo@2x.png",
+    "icon_url": "{% absolute_site_logo_url %}",
     "attachments": [{
         {% if check.status == "up" %}
             "color": "good",
@@ -11,7 +11,8 @@
 
         "fallback": "The check \"{{ check.name_then_code|escapejs }}\" is {{ check.status|upper }}.",
         "mrkdwn_in": ["fields"],
-        "text": "“{{ check.name_then_code|escapejs }}” is {{ check.status|upper }}.",
+        "title": "“{{ check.name_then_code|escapejs }}” is {{ check.status|upper }}.",
+        "title_link": "{{ check.cloaked_url }}",
         "fields": [
             {% if check.desc %}
                 {"title": "Description",

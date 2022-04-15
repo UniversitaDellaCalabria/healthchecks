@@ -1,16 +1,19 @@
-from datetime import datetime, timedelta as td
+from datetime import timedelta as td
+import email
 import json
 import os
+import re
 from secrets import token_urlsafe
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from cron_descriptor import ExpressionDescriptor
-from croniter import croniter
+from cronsim.cronsim import CronSim, CronSimError
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core import signing
-from django.db.models import Count
+from django.core.exceptions import PermissionDenied
+from django.db.models import Count, F
 from django.http import (
     Http404,
     HttpResponse,
@@ -21,10 +24,10 @@ from django.http import (
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import get_template, render_to_string
 from django.urls import reverse
-from django.utils import timezone
+from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from hc.accounts.models import Project
+from hc.accounts.models import Project, Member
 from hc.api.models import (
     DEFAULT_GRACE,
     DEFAULT_TIMEOUT,
@@ -34,7 +37,7 @@ from hc.api.models import (
     Ping,
     Notification,
 )
-from hc.api.transports import Telegram
+from hc.api.transports import Signal, Telegram, TransportError
 from hc.front.decorators import require_setting
 from hc.front import forms
 from hc.front.schemas import telegram_callback
@@ -43,13 +46,16 @@ from hc.front.templatetags.hc_extras import (
     down_title,
     sortchecks,
     site_hostname,
-    site_scheme,
 )
 from hc.lib import jsonschema
 from hc.lib.badges import get_badge_url
-import pytz
-from pytz.exceptions import UnknownTimeZoneError
+from hc.lib.tz import all_timezones
 import requests
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 
 VALID_SORT_VALUES = ("name", "-name", "last_ping", "-last_ping", "created")
@@ -85,15 +91,23 @@ def _get_check_for_user(request, code):
 
     assert request.user.is_authenticated
 
-    q = Check.objects
-    if not request.user.is_superuser:
-        project_ids = request.profile.projects().values("id")
-        q = q.filter(project_id__in=project_ids)
+    check = get_object_or_404(Check.objects.select_related("project"), code=code)
+    if request.user.is_superuser:
+        return check, True
 
-    try:
-        return q.get(code=code)
-    except Check.DoesNotExist:
-        raise Http404("not found")
+    if request.user.id == check.project.owner_id:
+        return check, True
+
+    membership = get_object_or_404(Member, project=check.project, user=request.user)
+    return check, membership.is_rw
+
+
+def _get_rw_check_for_user(request, code):
+    check, rw = _get_check_for_user(request, code)
+    if not rw:
+        raise PermissionDenied
+
+    return check
 
 
 def _get_channel_for_user(request, code):
@@ -101,53 +115,76 @@ def _get_channel_for_user(request, code):
 
     assert request.user.is_authenticated
 
-    q = Channel.objects
-    if not request.user.is_superuser:
-        project_ids = request.profile.projects().values("id")
-        q = q.filter(project_id__in=project_ids)
+    channel = get_object_or_404(Channel.objects.select_related("project"), code=code)
+    if request.user.is_superuser:
+        return channel, True
 
-    try:
-        return q.get(code=code)
-    except Channel.DoesNotExist:
-        raise Http404("not found")
+    if request.user.id == channel.project.owner_id:
+        return channel, True
+
+    membership = get_object_or_404(Member, project=channel.project, user=request.user)
+    return channel, membership.is_rw
+
+
+def _get_rw_channel_for_user(request, code):
+    channel, rw = _get_channel_for_user(request, code)
+    if not rw:
+        raise PermissionDenied
+
+    return channel
 
 
 def _get_project_for_user(request, project_code):
-    """ Return true if current user has access to the specified account. """
+    """ Check access, return (project, rw) tuple. """
 
+    project = get_object_or_404(Project, code=project_code)
     if request.user.is_superuser:
-        q = Project.objects
-    else:
-        q = request.profile.projects()
+        return project, True
 
-    try:
-        return q.get(code=project_code)
-    except Project.DoesNotExist:
-        raise Http404("not found")
+    if request.user.id == project.owner_id:
+        return project, True
+
+    membership = get_object_or_404(Member, project=project, user=request.user)
+
+    return project, membership.is_rw
+
+
+def _get_rw_project_for_user(request, project_code):
+    """ Check access, return (project, rw) tuple. """
+
+    project, rw = _get_project_for_user(request, project_code)
+    if not rw:
+        raise PermissionDenied
+
+    return project
 
 
 def _refresh_last_active_date(profile):
     """ Update last_active_date if it is more than a day old. """
 
-    now = timezone.now()
-    if profile.last_active_date is None or (now - profile.last_active_date).days > 0:
-        profile.last_active_date = now
+    if profile.last_active_date is None or (now() - profile.last_active_date).days > 0:
+        profile.last_active_date = now()
         profile.save()
 
 
 @login_required
 def my_checks(request, code):
     _refresh_last_active_date(request.profile)
-    project = _get_project_for_user(request, code)
+    project, rw = _get_project_for_user(request, code)
 
     if request.GET.get("sort") in VALID_SORT_VALUES:
         request.profile.sort = request.GET["sort"]
         request.profile.save()
 
+    if request.GET.get("urls") in ("uuid", "slug") and rw:
+        project.show_slugs = request.GET["urls"] == "slug"
+        project.save()
+
     if request.session.get("last_project_id") != project.id:
         request.session["last_project_id"] = project.id
 
     q = Check.objects.filter(project=project)
+    q = q.select_related("project")
     checks = list(q.prefetch_related("channel_set"))
     sortchecks(checks, request.profile.sort)
 
@@ -174,6 +211,15 @@ def my_checks(request, code):
             if search not in search_key:
                 hidden_checks.add(check)
 
+    # Figure out which checks have ambiguous ping URLs
+    seen, ambiguous = set(), set()
+    if project.show_slugs:
+        for check in checks:
+            if check.slug and check.slug in seen:
+                ambiguous.add(check.slug)
+            else:
+                seen.add(check.slug)
+
     # Do we need to show the "Last Duration" header?
     show_last_duration = False
     for check in checks:
@@ -183,18 +229,20 @@ def my_checks(request, code):
 
     ctx = {
         "page": "checks",
+        "rw": rw,
         "checks": checks,
         "channels": channels,
         "num_down": num_down,
         "tags": pairs,
         "ping_endpoint": settings.PING_ENDPOINT,
-        "timezones": pytz.all_timezones,
+        "timezones": all_timezones,
         "project": project,
         "num_available": project.num_checks_available(),
         "sort": request.profile.sort,
         "selected_tags": selected_tags,
         "search": search,
         "hidden_checks": hidden_checks,
+        "ambiguous": ambiguous,
         "show_last_duration": show_last_duration,
     }
 
@@ -214,7 +262,7 @@ def status(request, code):
             {
                 "code": str(check.code),
                 "status": check.get_status(),
-                "last_ping": LAST_PING_TMPL.render(ctx),
+                "last_ping": LAST_PING_TMPL.render(ctx).strip(),
                 "started": check.last_start is not None,
             }
         )
@@ -228,7 +276,7 @@ def status(request, code):
 @login_required
 @require_POST
 def switch_channel(request, code, channel_code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
 
     channel = get_object_or_404(Channel, code=channel_code)
     if channel.project_id != check.project_id:
@@ -244,7 +292,17 @@ def switch_channel(request, code, channel_code):
 
 def index(request):
     if request.user.is_authenticated:
-        projects = list(request.profile.projects())
+        project_ids = request.profile.projects().values("id")
+
+        q = Project.objects.filter(id__in=project_ids)
+        q = q.annotate(n_checks=Count("check", distinct=True))
+        q = q.annotate(n_channels=Count("channel", distinct=True))
+        q = q.annotate(owner_email=F("owner__email"))
+
+        projects = list(q)
+        # Primary sort key: projects with overall_status=down go first
+        # Secondary sort key: project's name
+        projects.sort(key=lambda p: (p.overall_status() != "down", p.name))
 
         ctx = {
             "page": "projects",
@@ -254,50 +312,41 @@ def index(request):
 
         return render(request, "front/projects.html", ctx)
 
-    check = Check()
+    return redirect("hc-login")
 
-    ctx = {
-        "page": "welcome",
-        "check": check,
-        "ping_url": check.url(),
-        "enable_apprise": settings.APPRISE_ENABLED is True,
-        "enable_discord": settings.DISCORD_CLIENT_ID is not None,
-        "enable_matrix": settings.MATRIX_ACCESS_TOKEN is not None,
-        "enable_pdc": settings.PD_VENDOR_KEY is not None,
-        "enable_pushbullet": settings.PUSHBULLET_CLIENT_ID is not None,
-        "enable_pushover": settings.PUSHOVER_API_TOKEN is not None,
-        "enable_shell": settings.SHELL_ENABLED is True,
-        "enable_slack_btn": settings.SLACK_CLIENT_ID is not None,
-        "enable_sms": settings.TWILIO_AUTH is not None,
-        "enable_telegram": settings.TELEGRAM_TOKEN is not None,
-        "enable_trello": settings.TRELLO_APP_KEY is not None,
-        "enable_whatsapp": settings.TWILIO_USE_WHATSAPP,
-        "registration_open": settings.REGISTRATION_OPEN,
-    }
 
-    return render(request, "front/welcome.html", ctx)
+def dashboard(request):
+    return render(request, "front/dashboard.html", {})
 
 
 def serve_doc(request, doc="introduction"):
+    # Filenames in /templates/docs/ consist of lowercase letters and underscores,
+    # -- make sure we don't accept anything else
+    if not re.match(r"^[a-z_]+$", doc):
+        raise Http404("not found")
+
     path = os.path.join(settings.BASE_DIR, "templates/docs", doc + ".html")
     if not os.path.exists(path):
         raise Http404("not found")
 
-    replaces = {
-        "{{ default_timeout }}": str(int(DEFAULT_TIMEOUT.total_seconds())),
-        "{{ default_grace }}": str(int(DEFAULT_GRACE.total_seconds())),
-        "SITE_NAME": settings.SITE_NAME,
-        "SITE_ROOT": settings.SITE_ROOT,
-        "SITE_HOSTNAME": site_hostname(),
-        "SITE_SCHEME": site_scheme(),
-        "PING_ENDPOINT": settings.PING_ENDPOINT,
-        "PING_URL": settings.PING_ENDPOINT + "your-uuid-here",
-        "IMG_URL": os.path.join(settings.STATIC_URL, "img/docs"),
-    }
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    content = open(path, "r", encoding="utf-8").read()
-    for placeholder, value in replaces.items():
-        content = content.replace(placeholder, value)
+    if not doc.startswith("self_hosted"):
+        replaces = {
+            "{{ default_timeout }}": str(int(DEFAULT_TIMEOUT.total_seconds())),
+            "{{ default_grace }}": str(int(DEFAULT_GRACE.total_seconds())),
+            "SITE_NAME": settings.SITE_NAME,
+            "SITE_ROOT": settings.SITE_ROOT,
+            "SITE_HOSTNAME": site_hostname(),
+            "SITE_SCHEME": urlparse(settings.SITE_ROOT).scheme,
+            "PING_ENDPOINT": settings.PING_ENDPOINT,
+            "PING_URL": settings.PING_ENDPOINT + "your-uuid-here",
+            "IMG_URL": os.path.join(settings.STATIC_URL, "img/docs"),
+        }
+
+        for placeholder, value in replaces.items():
+            content = content.replace(placeholder, value)
 
     ctx = {
         "page": "docs",
@@ -316,7 +365,7 @@ def docs_cron(request):
 @require_POST
 @login_required
 def add_check(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
     if project.num_checks_available() <= 0:
         return HttpResponseBadRequest()
 
@@ -332,10 +381,11 @@ def add_check(request, code):
 @require_POST
 @login_required
 def update_name(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
+
     form = forms.NameTagsForm(request.POST)
     if form.is_valid():
-        check.name = form.cleaned_data["name"]
+        check.set_name_slug(form.cleaned_data["name"])
         check.tags = form.cleaned_data["tags"]
         check.desc = form.cleaned_data["desc"]
         check.save()
@@ -349,10 +399,12 @@ def update_name(request, code):
 @require_POST
 @login_required
 def filtering_rules(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
+
     form = forms.FilteringRulesForm(request.POST)
     if form.is_valid():
         check.subject = form.cleaned_data["subject"]
+        check.subject_fail = form.cleaned_data["subject_fail"]
         check.methods = form.cleaned_data["methods"]
         check.manual_resume = form.cleaned_data["manual_resume"]
         check.save()
@@ -363,7 +415,7 @@ def filtering_rules(request, code):
 @require_POST
 @login_required
 def update_timeout(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
 
     kind = request.POST.get("kind")
     if kind == "simple":
@@ -385,7 +437,7 @@ def update_timeout(request, code):
         check.grace = td(minutes=form.cleaned_data["grace"])
 
     check.alert_after = check.going_down_after()
-    if check.status == "up" and check.alert_after < timezone.now():
+    if check.status == "up" and check.alert_after < now():
         # Checks can flip from "up" to "down" state as a result of changing check's
         # schedule.  We don't want to send notifications when changing schedule
         # interactively in the web UI. So we update the `alert_after` and `status`
@@ -408,29 +460,34 @@ def cron_preview(request):
     tz = request.POST.get("tz")
     ctx = {"tz": tz, "dates": []}
 
-    try:
-        zone = pytz.timezone(tz)
-        now_local = timezone.localtime(timezone.now(), zone)
-
-        if len(schedule.split()) != 5:
-            raise ValueError()
-
-        it = croniter(schedule, now_local)
-        for i in range(0, 6):
-            ctx["dates"].append(it.get_next(datetime))
-
-        ctx["desc"] = str(ExpressionDescriptor(schedule, use_24hour_time_format=True))
-    except UnknownTimeZoneError:
+    if tz not in all_timezones:
         ctx["bad_tz"] = True
-    except:
+        return render(request, "front/cron_preview.html", ctx)
+
+    now_local = now().astimezone(ZoneInfo(tz))
+    try:
+        it = CronSim(schedule, now_local)
+        for i in range(0, 6):
+            ctx["dates"].append(next(it))
+    except CronSimError:
         ctx["bad_schedule"] = True
+
+    if ctx["dates"]:
+        try:
+            descriptor = ExpressionDescriptor(schedule, use_24hour_time_format=True)
+            ctx["desc"] = descriptor.get_description()
+        except:
+            # We assume the schedule is valid if cronsim accepts it.
+            # If cron-descriptor throws an exception, don't show the description
+            # to the user.
+            pass
 
     return render(request, "front/cron_preview.html", ctx)
 
 
 @login_required
 def ping_details(request, code, n=None):
-    check = _get_check_for_user(request, code)
+    check, rw = _get_check_for_user(request, code)
     q = Ping.objects.filter(owner=check)
     if n:
         q = q.filter(n=n)
@@ -440,20 +497,52 @@ def ping_details(request, code, n=None):
     except Ping.DoesNotExist:
         return render(request, "front/ping_details_not_found.html")
 
-    ctx = {"check": check, "ping": ping}
+    body = ping.get_body()
+    ctx = {"check": check, "ping": ping, "plain": None, "html": None, "body": body}
+
+    if ping.scheme == "email":
+        parsed = email.message_from_string(body, policy=email.policy.SMTP)
+        ctx["subject"] = parsed.get("subject", "")
+
+        plain_mime_part = parsed.get_body(("plain",))
+        if plain_mime_part:
+            ctx["plain"] = plain_mime_part.get_content()
+
+        html_mime_part = parsed.get_body(("html",))
+        if html_mime_part:
+            ctx["html"] = html_mime_part.get_content()
 
     return render(request, "front/ping_details.html", ctx)
+
+
+@login_required
+def ping_body(request, code, n):
+    check, rw = _get_check_for_user(request, code)
+    ping = get_object_or_404(Ping, owner=check, n=n)
+
+    body = ping.get_body()
+    if not body:
+        raise Http404("not found")
+
+    response = HttpResponse(body, content_type="application/octet-stream")
+    filename = "%s-%s" % (check.code, ping.n)
+    response["Content-Disposition"] = 'attachment; filename="%s"' % filename
+    return response
 
 
 @require_POST
 @login_required
 def pause(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
 
     check.status = "paused"
     check.last_start = None
     check.alert_after = None
     check.save()
+
+    # After pausing a check we must check if all checks are up,
+    # and Profile.next_nag_date needs to be cleared out:
+    check.project.update_next_nag_dates()
 
     # Don't redirect after an AJAX request:
     if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
@@ -465,7 +554,7 @@ def pause(request, code):
 @require_POST
 @login_required
 def resume(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
 
     check.status = "new"
     check.last_start = None
@@ -479,7 +568,8 @@ def resume(request, code):
 @require_POST
 @login_required
 def remove_check(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
+
     project = check.project
     check.delete()
     return redirect("hc-checks", project.code)
@@ -512,7 +602,7 @@ def _get_events(check, limit):
 
 @login_required
 def log(request, code):
-    check = _get_check_for_user(request, code)
+    check, rw = _get_check_for_user(request, code)
 
     limit = check.project.owner_profile.ping_log_limit
     ctx = {
@@ -529,7 +619,11 @@ def log(request, code):
 @login_required
 def details(request, code):
     _refresh_last_active_date(request.profile)
-    check = _get_check_for_user(request, code)
+    check, rw = _get_check_for_user(request, code)
+
+    if request.GET.get("urls") in ("uuid", "slug") and rw:
+        check.project.show_slugs = request.GET["urls"] == "slug"
+        check.project.save()
 
     channels = Channel.objects.filter(project=check.project)
     channels = list(channels.order_by("created"))
@@ -543,9 +637,10 @@ def details(request, code):
         "page": "details",
         "project": check.project,
         "check": check,
+        "rw": rw,
         "channels": channels,
         "enabled_channels": list(check.channel_set.all()),
-        "timezones": pytz.all_timezones,
+        "timezones": all_timezones,
         "downtimes": check.downtimes(months=3),
         "is_new": "new" in request.GET,
         "is_copied": "copied" in request.GET,
@@ -556,11 +651,20 @@ def details(request, code):
 
 
 @login_required
+def uncloak(request, unique_key):
+    for check in request.profile.checks_from_all_projects().only("code"):
+        if check.unique_key == unique_key:
+            return redirect("hc-details", check.code)
+
+    raise Http404("not found")
+
+
+@login_required
 def transfer(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
 
     if request.method == "POST":
-        target_project = _get_project_for_user(request, request.POST["project"])
+        target_project = _get_rw_project_for_user(request, request.POST["project"])
         if target_project.num_checks_available() <= 0:
             return HttpResponseBadRequest()
 
@@ -578,15 +682,22 @@ def transfer(request, code):
 @require_POST
 @login_required
 def copy(request, code):
-    check = _get_check_for_user(request, code)
+    check = _get_rw_check_for_user(request, code)
 
     if check.project.num_checks_available() <= 0:
         return HttpResponseBadRequest()
 
+    new_name = check.name + " (copy)"
+    # Make sure we don't exceed the 100 character db field limit:
+    if len(new_name) > 100:
+        new_name = check.name[:90] + "... (copy)"
+
     copied = Check(project=check.project)
-    copied.name = check.name + " (copy)"
+    copied.set_name_slug(new_name)
     copied.desc, copied.tags = check.desc, check.tags
-    copied.subject = check.subject
+    copied.subject, copied.subject_fail = check.subject, check.subject_fail
+    copied.methods = check.methods
+    copied.manual_resume = check.manual_resume
 
     copied.kind = check.kind
     copied.timeout, copied.grace = check.timeout, check.grace
@@ -601,7 +712,7 @@ def copy(request, code):
 
 @login_required
 def status_single(request, code):
-    check = _get_check_for_user(request, code)
+    check, rw = _get_check_for_user(request, code)
 
     status = check.get_status()
     events = _get_events(check, 20)
@@ -611,9 +722,10 @@ def status_single(request, code):
 
     doc = {
         "status": status,
-        "status_text": STATUS_TEXT_TMPL.render({"check": check}),
+        "status_text": STATUS_TEXT_TMPL.render({"check": check, "rw": rw}),
         "title": down_title(check),
         "updated": updated,
+        "started": check.last_start is not None,
     }
 
     if updated != request.GET.get("u"):
@@ -625,7 +737,7 @@ def status_single(request, code):
 
 @login_required
 def badges(request, code):
-    project = _get_project_for_user(request, code)
+    project, rw = _get_project_for_user(request, code)
 
     tags = set()
     for check in Check.objects.filter(project=project):
@@ -634,14 +746,18 @@ def badges(request, code):
     sorted_tags = sorted(tags, key=lambda s: s.lower())
     sorted_tags.append("*")  # For the "overall status" badge
 
+    key = project.badge_key
     urls = []
     for tag in sorted_tags:
         urls.append(
             {
                 "tag": tag,
-                "svg": get_badge_url(project.badge_key, tag),
-                "json": get_badge_url(project.badge_key, tag, fmt="json"),
-                "shields": get_badge_url(project.badge_key, tag, fmt="shields"),
+                "svg": get_badge_url(key, tag),
+                "svg3": get_badge_url(key, tag, with_late=True),
+                "json": get_badge_url(key, tag, fmt="json"),
+                "json3": get_badge_url(key, tag, fmt="json", with_late=True),
+                "shields": get_badge_url(key, tag, fmt="shields"),
+                "shields3": get_badge_url(key, tag, fmt="shields", with_late=True),
             }
         )
 
@@ -657,9 +773,12 @@ def badges(request, code):
 
 @login_required
 def channels(request, code):
-    project = _get_project_for_user(request, code)
+    project, rw = _get_project_for_user(request, code)
 
     if request.method == "POST":
+        if not rw:
+            return HttpResponseForbidden()
+
         code = request.POST["channel"]
         try:
             channel = Channel.objects.get(code=code)
@@ -681,7 +800,7 @@ def channels(request, code):
                 new_checks.append(check)
 
         channel.checks.set(new_checks)
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     channels = Channel.objects.filter(project=project)
     channels = channels.order_by("created")
@@ -689,21 +808,35 @@ def channels(request, code):
 
     ctx = {
         "page": "channels",
+        "rw": rw,
         "project": project,
         "profile": project.owner_profile,
         "channels": channels,
         "enable_apprise": settings.APPRISE_ENABLED is True,
+        "enable_call": settings.TWILIO_AUTH is not None,
         "enable_discord": settings.DISCORD_CLIENT_ID is not None,
+        "enable_linenotify": settings.LINENOTIFY_CLIENT_ID is not None,
         "enable_matrix": settings.MATRIX_ACCESS_TOKEN is not None,
-        "enable_pdc": settings.PD_VENDOR_KEY is not None,
+        "enable_mattermost": settings.MATTERMOST_ENABLED is True,
+        "enable_msteams": settings.MSTEAMS_ENABLED is True,
+        "enable_opsgenie": settings.OPSGENIE_ENABLED is True,
+        "enable_pagertree": settings.PAGERTREE_ENABLED is True,
+        "enable_pd": settings.PD_ENABLED is True,
+        "enable_prometheus": settings.PROMETHEUS_ENABLED is True,
         "enable_pushbullet": settings.PUSHBULLET_CLIENT_ID is not None,
         "enable_pushover": settings.PUSHOVER_API_TOKEN is not None,
         "enable_shell": settings.SHELL_ENABLED is True,
+        "enable_signal": settings.SIGNAL_CLI_SOCKET is not None,
+        "enable_slack": settings.SLACK_ENABLED is True,
         "enable_slack_btn": settings.SLACK_CLIENT_ID is not None,
         "enable_sms": settings.TWILIO_AUTH is not None,
+        "enable_spike": settings.SPIKE_ENABLED is True,
         "enable_telegram": settings.TELEGRAM_TOKEN is not None,
         "enable_trello": settings.TRELLO_APP_KEY is not None,
+        "enable_victorops": settings.VICTOROPS_ENABLED is True,
+        "enable_webhooks": settings.WEBHOOKS_ENABLED is True,
         "enable_whatsapp": settings.TWILIO_USE_WHATSAPP,
+        "enable_zulip": settings.ZULIP_ENABLED is True,
         "use_payments": settings.USE_PAYMENTS,
     }
 
@@ -712,7 +845,7 @@ def channels(request, code):
 
 @login_required
 def channel_checks(request, code):
-    channel = _get_channel_for_user(request, code)
+    channel = _get_rw_channel_for_user(request, code)
 
     assigned = set(channel.checks.values_list("code", flat=True).distinct())
     checks = Check.objects.filter(project=channel.project).order_by("created")
@@ -725,14 +858,14 @@ def channel_checks(request, code):
 @require_POST
 @login_required
 def update_channel_name(request, code):
-    channel = _get_channel_for_user(request, code)
+    channel = _get_rw_channel_for_user(request, code)
 
     form = forms.ChannelNameForm(request.POST)
     if form.is_valid():
         channel.name = form.cleaned_data["name"]
         channel.save()
 
-    return redirect("hc-p-channels", channel.project.code)
+    return redirect("hc-channels", channel.project.code)
 
 
 def verify_email(request, code, token):
@@ -747,27 +880,25 @@ def verify_email(request, code, token):
 
 @csrf_exempt
 def unsubscribe_email(request, code, signed_token):
+    ctx = {}
+
     # Some email servers open links in emails to check for malicious content.
     # To work around this, on GET requests we serve a confirmation form.
     # If the signature is at least 5 minutes old, we also include JS code to
     # auto-submit the form.
-    ctx = {}
-    if ":" in signed_token:
-        signer = signing.TimestampSigner(salt="alerts")
-        # First, check the signature without looking at the timestamp:
-        try:
-            token = signer.unsign(signed_token)
-        except signing.BadSignature:
-            return render(request, "bad_link.html")
+    signer = signing.TimestampSigner(salt="alerts")
 
-        # Check if timestamp is older than 5 minutes:
-        try:
-            signer.unsign(signed_token, max_age=300)
-        except signing.SignatureExpired:
-            ctx["autosubmit"] = True
+    # First, check the signature without looking at the timestamp:
+    try:
+        token = signer.unsign(signed_token)
+    except signing.BadSignature:
+        return render(request, "bad_link.html")
 
-    else:
-        token = signed_token
+    # Then, check if timestamp is older than 5 minutes:
+    try:
+        signer.unsign(signed_token, max_age=300)
+    except signing.SignatureExpired:
+        ctx["autosubmit"] = True
 
     channel = get_object_or_404(Channel, code=code, kind="email")
     if channel.make_token() != token:
@@ -783,10 +914,10 @@ def unsubscribe_email(request, code, signed_token):
 @require_POST
 @login_required
 def send_test_notification(request, code):
-    channel = _get_channel_for_user(request, code)
+    channel, rw = _get_channel_for_user(request, code)
 
-    dummy = Check(name="TEST", status="down")
-    dummy.last_ping = timezone.now() - td(days=1)
+    dummy = Check(name="TEST", status="down", project=channel.project)
+    dummy.last_ping = now() - td(days=1)
     dummy.n_pings = 42
 
     if channel.kind == "webhook" and not channel.url_down:
@@ -802,108 +933,119 @@ def send_test_notification(request, code):
     error = channel.notify(dummy, is_test=True)
 
     if error:
-        messages.warning(request, "Could not send a test notification. %s" % error)
+        messages.warning(request, "Could not send a test notification. %s." % error)
     else:
         messages.success(request, "Test notification sent!")
 
-    return redirect("hc-p-channels", channel.project.code)
+    return redirect("hc-channels", channel.project.code)
 
 
 @require_POST
 @login_required
 def remove_channel(request, code):
-    channel = _get_channel_for_user(request, code)
+    channel = _get_rw_channel_for_user(request, code)
     project = channel.project
     channel.delete()
 
-    return redirect("hc-p-channels", project.code)
+    return redirect("hc-channels", project.code)
 
 
 @login_required
-def add_email(request, code):
-    project = _get_project_for_user(request, code)
+def email_form(request, channel=None, code=None):
+    """ Add email integration or edit an existing email integration. """
+
+    is_new = channel is None
+    if is_new:
+        project = _get_rw_project_for_user(request, code)
+        channel = Channel(project=project, kind="email")
 
     if request.method == "POST":
-        form = forms.AddEmailForm(request.POST)
+        form = forms.EmailForm(request.POST)
         if form.is_valid():
-            channel = Channel(project=project, kind="email")
-            channel.value = json.dumps(
-                {
-                    "value": form.cleaned_data["value"],
-                    "up": form.cleaned_data["up"],
-                    "down": form.cleaned_data["down"],
-                }
-            )
+            if channel.disabled or form.cleaned_data["value"] != channel.email_value:
+                channel.disabled = False
+
+                if not settings.EMAIL_USE_VERIFICATION:
+                    # In self-hosted setting, administator can set
+                    # EMAIL_USE_VERIFICATION=False to disable email verification
+                    channel.email_verified = True
+                elif form.cleaned_data["value"] == request.user.email:
+                    # If the user is adding *their own* address
+                    # we skip the verification step
+                    channel.email_verified = True
+                else:
+                    channel.email_verified = False
+
+            channel.value = form.get_value()
             channel.save()
 
-            channel.assign_all_checks()
+            if is_new:
+                channel.assign_all_checks()
 
-            is_own_email = form.cleaned_data["value"] == request.user.email
-            if is_own_email or not settings.EMAIL_USE_VERIFICATION:
-                # If user is subscribing *their own* address
-                # we can skip the verification step.
-
-                # Additionally, in self-hosted setting, administator has the
-                # option to disable the email verification step altogether.
-
-                channel.email_verified = True
-                channel.save()
-            else:
+            if not channel.email_verified:
                 channel.send_verify_link()
 
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", channel.project.code)
+    elif is_new:
+        form = forms.EmailForm()
     else:
-        form = forms.AddEmailForm()
+        form = forms.EmailForm(
+            {
+                "value": channel.email_value,
+                "up": channel.email_notify_up,
+                "down": channel.email_notify_down,
+            }
+        )
 
     ctx = {
         "page": "channels",
-        "project": project,
+        "project": channel.project,
         "use_verification": settings.EMAIL_USE_VERIFICATION,
         "form": form,
+        "is_new": is_new,
     }
-    return render(request, "integrations/add_email.html", ctx)
+    return render(request, "integrations/email_form.html", ctx)
 
 
 @login_required
-def add_webhook(request, code):
-    project = _get_project_for_user(request, code)
+def edit_channel(request, code):
+    channel = _get_rw_channel_for_user(request, code)
+    if channel.kind == "email":
+        return email_form(request, channel=channel)
+    if channel.kind == "webhook":
+        return webhook_form(request, channel=channel)
+    if channel.kind == "sms":
+        return sms_form(request, channel=channel)
+    if channel.kind == "signal":
+        return signal_form(request, channel=channel)
+    if channel.kind == "whatsapp":
+        return whatsapp_form(request, channel=channel)
+
+    return HttpResponseBadRequest()
+
+
+@require_setting("WEBHOOKS_ENABLED")
+@login_required
+def webhook_form(request, channel=None, code=None):
+    is_new = channel is None
+    if is_new:
+        project = _get_rw_project_for_user(request, code)
+        channel = Channel(project=project, kind="webhook")
 
     if request.method == "POST":
         form = forms.WebhookForm(request.POST)
         if form.is_valid():
-            channel = Channel(project=project, kind="webhook")
             channel.name = form.cleaned_data["name"]
             channel.value = form.get_value()
             channel.save()
 
-            channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            if is_new:
+                channel.assign_all_checks()
 
-    else:
+            return redirect("hc-channels", channel.project.code)
+
+    elif is_new:
         form = forms.WebhookForm()
-
-    ctx = {
-        "page": "channels",
-        "project": project,
-        "form": form,
-    }
-    return render(request, "integrations/webhook_form.html", ctx)
-
-
-@login_required
-def edit_webhook(request, code):
-    channel = _get_channel_for_user(request, code)
-    if channel.kind != "webhook":
-        return HttpResponseBadRequest()
-
-    if request.method == "POST":
-        form = forms.WebhookForm(request.POST)
-        if form.is_valid():
-            channel.name = form.cleaned_data["name"]
-            channel.value = form.get_value()
-            channel.save()
-
-            return redirect("hc-p-channels", channel.project.code)
     else:
 
         def flatten(d):
@@ -913,14 +1055,13 @@ def edit_webhook(request, code):
         doc["headers_down"] = flatten(doc["headers_down"])
         doc["headers_up"] = flatten(doc["headers_up"])
         doc["name"] = channel.name
-
         form = forms.WebhookForm(doc)
 
     ctx = {
         "page": "channels",
         "project": channel.project,
-        "channel": channel,
         "form": form,
+        "is_new": is_new,
     }
     return render(request, "integrations/webhook_form.html", ctx)
 
@@ -928,7 +1069,7 @@ def edit_webhook(request, code):
 @require_setting("SHELL_ENABLED")
 @login_required
 def add_shell(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
     if request.method == "POST":
         form = forms.AddShellForm(request.POST)
         if form.is_valid():
@@ -937,7 +1078,7 @@ def add_shell(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddShellForm()
 
@@ -949,9 +1090,25 @@ def add_shell(request, code):
     return render(request, "integrations/add_shell.html", ctx)
 
 
+@require_setting("PD_ENABLED")
 @login_required
 def add_pd(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
+
+    # Simple Install Flow
+    if settings.PD_APP_ID:
+        state = token_urlsafe()
+
+        redirect_url = settings.SITE_ROOT + reverse("hc-add-pd-complete")
+        redirect_url += "?" + urlencode({"state": state})
+
+        install_url = "https://app.pagerduty.com/install/integration?" + urlencode(
+            {"app_id": settings.PD_APP_ID, "redirect_url": redirect_url, "version": "2"}
+        )
+
+        ctx = {"page": "channels", "project": project, "install_url": install_url}
+        request.session["pagerduty"] = (state, str(project.code))
+        return render(request, "integrations/add_pd_simple.html", ctx)
 
     if request.method == "POST":
         form = forms.AddPdForm(request.POST)
@@ -961,70 +1118,52 @@ def add_pd(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddPdForm()
 
-    ctx = {"page": "channels", "form": form}
+    ctx = {"page": "channels", "project": project, "form": form}
     return render(request, "integrations/add_pd.html", ctx)
 
 
-@require_setting("PD_VENDOR_KEY")
-def pdc_help(request):
-    ctx = {"page": "channels"}
-    return render(request, "integrations/add_pdc.html", ctx)
-
-
-@require_setting("PD_VENDOR_KEY")
+@require_setting("PD_ENABLED")
+@require_setting("PD_APP_ID")
 @login_required
-def add_pdc(request, code):
-    project = _get_project_for_user(request, code)
-
-    state = token_urlsafe()
-    callback = settings.SITE_ROOT + reverse(
-        "hc-add-pdc-complete", args=[project.code, state]
-    )
-    connect_url = "https://connect.pagerduty.com/connect?" + urlencode(
-        {"vendor": settings.PD_VENDOR_KEY, "callback": callback}
-    )
-
-    ctx = {"page": "channels", "project": project, "connect_url": connect_url}
-    request.session["pd"] = state
-    return render(request, "integrations/add_pdc.html", ctx)
-
-
-@require_setting("PD_VENDOR_KEY")
-@login_required
-def add_pdc_complete(request, code, state):
-    if "pd" not in request.session:
+def add_pd_complete(request):
+    if "pagerduty" not in request.session:
         return HttpResponseBadRequest()
 
-    project = _get_project_for_user(request, code)
+    state, code = request.session.pop("pagerduty")
+    if request.GET.get("state") != state:
+        return HttpResponseForbidden()
 
-    session_state = request.session.pop("pd")
-    if session_state != state:
-        return HttpResponseBadRequest()
+    project = _get_rw_project_for_user(request, code)
 
-    if request.GET.get("error") == "cancelled":
-        messages.warning(request, "PagerDuty setup was cancelled.")
-        return redirect("hc-p-channels", project.code)
+    doc = json.loads(request.GET["config"])
+    for item in doc["integration_keys"]:
+        channel = Channel(kind="pd", project=project)
+        channel.name = item["name"]
+        channel.value = json.dumps(
+            {"service_key": item["integration_key"], "account": doc["account"]["name"]}
+        )
+        channel.save()
+        channel.assign_all_checks()
 
-    channel = Channel(kind="pd", project=project)
-    channel.value = json.dumps(
-        {
-            "service_key": request.GET.get("service_key"),
-            "account": request.GET.get("account"),
-        }
-    )
-    channel.save()
-    channel.assign_all_checks()
     messages.success(request, "The PagerDuty integration has been added!")
-    return redirect("hc-p-channels", project.code)
+    return redirect("hc-channels", project.code)
 
 
+@require_setting("PD_ENABLED")
+@require_setting("PD_APP_ID")
+def pd_help(request):
+    ctx = {"page": "channels"}
+    return render(request, "integrations/add_pd_simple.html", ctx)
+
+
+@require_setting("PAGERTREE_ENABLED")
 @login_required
 def add_pagertree(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddUrlForm(request.POST)
@@ -1034,7 +1173,7 @@ def add_pagertree(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddUrlForm()
 
@@ -1042,9 +1181,10 @@ def add_pagertree(request, code):
     return render(request, "integrations/add_pagertree.html", ctx)
 
 
+@require_setting("SLACK_ENABLED")
 @login_required
 def add_slack(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddUrlForm(request.POST)
@@ -1054,7 +1194,7 @@ def add_slack(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddUrlForm()
 
@@ -1066,16 +1206,18 @@ def add_slack(request, code):
     return render(request, "integrations/add_slack.html", ctx)
 
 
+@require_setting("SLACK_ENABLED")
 @require_setting("SLACK_CLIENT_ID")
 def slack_help(request):
     ctx = {"page": "channels"}
     return render(request, "integrations/add_slack_btn.html", ctx)
 
 
+@require_setting("SLACK_ENABLED")
 @require_setting("SLACK_CLIENT_ID")
 @login_required
 def add_slack_btn(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     state = token_urlsafe()
     authorize_url = "https://slack.com/oauth/v2/authorize?" + urlencode(
@@ -1096,6 +1238,7 @@ def add_slack_btn(request, code):
     return render(request, "integrations/add_slack_btn.html", ctx)
 
 
+@require_setting("SLACK_ENABLED")
 @require_setting("SLACK_CLIENT_ID")
 @login_required
 def add_slack_complete(request):
@@ -1103,10 +1246,10 @@ def add_slack_complete(request):
         return HttpResponseForbidden()
 
     state, code = request.session.pop("add_slack")
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
     if request.GET.get("error") == "access_denied":
         messages.warning(request, "Slack setup was cancelled.")
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     if request.GET.get("state") != state:
         return HttpResponseForbidden()
@@ -1131,12 +1274,13 @@ def add_slack_complete(request):
         s = doc.get("error")
         messages.warning(request, "Error message from slack: %s" % s)
 
-    return redirect("hc-p-channels", project.code)
+    return redirect("hc-channels", project.code)
 
 
+@require_setting("MATTERMOST_ENABLED")
 @login_required
 def add_mattermost(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddUrlForm(request.POST)
@@ -1146,7 +1290,7 @@ def add_mattermost(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddUrlForm()
 
@@ -1157,14 +1301,13 @@ def add_mattermost(request, code):
 @require_setting("PUSHBULLET_CLIENT_ID")
 @login_required
 def add_pushbullet(request, code):
-    project = _get_project_for_user(request, code)
-    redirect_uri = settings.SITE_ROOT + reverse("hc-add-pushbullet-complete")
+    project = _get_rw_project_for_user(request, code)
 
     state = token_urlsafe()
     authorize_url = "https://www.pushbullet.com/authorize?" + urlencode(
         {
             "client_id": settings.PUSHBULLET_CLIENT_ID,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": settings.SITE_ROOT + reverse(add_pushbullet_complete),
             "response_type": "code",
             "state": state,
         }
@@ -1187,11 +1330,11 @@ def add_pushbullet_complete(request):
         return HttpResponseForbidden()
 
     state, code = request.session.pop("add_pushbullet")
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.GET.get("error") == "access_denied":
         messages.warning(request, "Pushbullet setup was cancelled.")
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     if request.GET.get("state") != state:
         return HttpResponseForbidden()
@@ -1216,20 +1359,19 @@ def add_pushbullet_complete(request):
     else:
         messages.warning(request, "Something went wrong")
 
-    return redirect("hc-p-channels", project.code)
+    return redirect("hc-channels", project.code)
 
 
 @require_setting("DISCORD_CLIENT_ID")
 @login_required
 def add_discord(request, code):
-    project = _get_project_for_user(request, code)
-    redirect_uri = settings.SITE_ROOT + reverse("hc-add-discord-complete")
+    project = _get_rw_project_for_user(request, code)
     state = token_urlsafe()
     auth_url = "https://discordapp.com/api/oauth2/authorize?" + urlencode(
         {
             "client_id": settings.DISCORD_CLIENT_ID,
             "scope": "webhook.incoming",
-            "redirect_uri": redirect_uri,
+            "redirect_uri": settings.SITE_ROOT + reverse(add_discord_complete),
             "response_type": "code",
             "state": state,
         }
@@ -1248,16 +1390,15 @@ def add_discord_complete(request):
         return HttpResponseForbidden()
 
     state, code = request.session.pop("add_discord")
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.GET.get("error") == "access_denied":
         messages.warning(request, "Discord setup was cancelled.")
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     if request.GET.get("state") != state:
         return HttpResponseForbidden()
 
-    redirect_uri = settings.SITE_ROOT + reverse("hc-add-discord-complete")
     result = requests.post(
         "https://discordapp.com/api/oauth2/token",
         {
@@ -1265,7 +1406,7 @@ def add_discord_complete(request):
             "client_secret": settings.DISCORD_CLIENT_SECRET,
             "code": request.GET.get("code"),
             "grant_type": "authorization_code",
-            "redirect_uri": redirect_uri,
+            "redirect_uri": settings.SITE_ROOT + reverse(add_discord_complete),
         },
     )
 
@@ -1279,7 +1420,7 @@ def add_discord_complete(request):
     else:
         messages.warning(request, "Something went wrong.")
 
-    return redirect("hc-p-channels", project.code)
+    return redirect("hc-channels", project.code)
 
 
 @require_setting("PUSHOVER_API_TOKEN")
@@ -1291,12 +1432,12 @@ def pushover_help(request):
 @require_setting("PUSHOVER_API_TOKEN")
 @login_required
 def add_pushover(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         state = token_urlsafe()
 
-        failure_url = settings.SITE_ROOT + reverse("hc-p-channels", args=[project.code])
+        failure_url = settings.SITE_ROOT + reverse("hc-channels", args=[project.code])
         success_url = (
             settings.SITE_ROOT
             + reverse("hc-add-pushover", args=[project.code])
@@ -1330,7 +1471,7 @@ def add_pushover(request, code):
         if request.GET.get("pushover_unsubscribed") == "1":
             # Unsubscription: delete all Pushover channels for this project
             Channel.objects.filter(project=project, kind="po").delete()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
 
         form = forms.AddPushoverForm(request.GET)
         if not form.is_valid():
@@ -1342,7 +1483,7 @@ def add_pushover(request, code):
         channel.assign_all_checks()
 
         messages.success(request, "The Pushover integration has been added!")
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     # Show Integration Settings form
     ctx = {
@@ -1354,12 +1495,13 @@ def add_pushover(request, code):
     return render(request, "integrations/add_pushover.html", ctx)
 
 
+@require_setting("OPSGENIE_ENABLED")
 @login_required
 def add_opsgenie(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
-        form = forms.AddOpsGenieForm(request.POST)
+        form = forms.AddOpsgenieForm(request.POST)
         if form.is_valid():
             channel = Channel(project=project, kind="opsgenie")
             v = {"region": form.cleaned_data["region"], "key": form.cleaned_data["key"]}
@@ -1367,17 +1509,18 @@ def add_opsgenie(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
-        form = forms.AddOpsGenieForm()
+        form = forms.AddOpsgenieForm()
 
     ctx = {"page": "channels", "project": project, "form": form}
     return render(request, "integrations/add_opsgenie.html", ctx)
 
 
+@require_setting("VICTOROPS_ENABLED")
 @login_required
 def add_victorops(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddUrlForm(request.POST)
@@ -1387,7 +1530,7 @@ def add_victorops(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddUrlForm()
 
@@ -1395,9 +1538,10 @@ def add_victorops(request, code):
     return render(request, "integrations/add_victorops.html", ctx)
 
 
+@require_setting("ZULIP_ENABLED")
 @login_required
 def add_zulip(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddZulipForm(request.POST)
@@ -1407,7 +1551,7 @@ def add_zulip(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddZulipForm()
 
@@ -1420,6 +1564,12 @@ def add_zulip(request, code):
 def telegram_bot(request):
     try:
         doc = json.loads(request.body.decode())
+        if "channel_post" in doc:
+            # Telegram's "channel_post" key uses the same structure as "message".
+            # To keep the JSON schema and the view logic simple, if the payload
+            # contains "channel_post", copy it to "message", and proceed as usual.
+            doc["message"] = doc["channel_post"]
+
         jsonschema.validate(doc, telegram_callback)
     except ValueError:
         return HttpResponseBadRequest()
@@ -1439,7 +1589,13 @@ def telegram_bot(request):
         {"qs": signing.dumps((chat["id"], chat["type"], name))},
     )
 
-    Telegram.send(chat["id"], invite)
+    try:
+        Telegram.send(chat["id"], invite)
+    except TransportError:
+        # Swallow the error and return HTTP 200 OK, otherwise Telegram will
+        # hit the webhook again and again.
+        pass
+
     return HttpResponse()
 
 
@@ -1465,7 +1621,7 @@ def add_telegram(request):
             return render(request, "bad_link.html")
 
     if request.method == "POST":
-        project = _get_project_for_user(request, request.POST.get("project"))
+        project = _get_rw_project_for_user(request, request.POST.get("project"))
         channel = Channel(project=project, kind="telegram")
         channel.value = json.dumps(
             {"id": chat_id, "type": chat_type, "name": chat_name}
@@ -1474,7 +1630,7 @@ def add_telegram(request):
 
         channel.assign_all_checks()
         messages.success(request, "The Telegram integration has been added!")
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     ctx = {
         "page": "channels",
@@ -1490,20 +1646,60 @@ def add_telegram(request):
 
 @require_setting("TWILIO_AUTH")
 @login_required
-def add_sms(request, code):
-    project = _get_project_for_user(request, code)
+def sms_form(request, channel=None, code=None):
+    is_new = channel is None
+    if is_new:
+        project = _get_rw_project_for_user(request, code)
+        channel = Channel(project=project, kind="sms")
+
     if request.method == "POST":
-        form = forms.AddSmsForm(request.POST)
+        form = forms.PhoneUpDownForm(request.POST)
         if form.is_valid():
-            channel = Channel(project=project, kind="sms")
             channel.name = form.cleaned_data["label"]
-            channel.value = json.dumps({"value": form.cleaned_data["value"]})
+            channel.value = form.get_json()
+            channel.save()
+
+            if is_new:
+                channel.assign_all_checks()
+            return redirect("hc-channels", channel.project.code)
+    elif is_new:
+        form = forms.PhoneUpDownForm(initial={"up": False})
+    else:
+        form = forms.PhoneUpDownForm(
+            {
+                "label": channel.name,
+                "phone": channel.phone_number,
+                "up": channel.sms_notify_up,
+                "down": channel.sms_notify_down,
+            }
+        )
+
+    ctx = {
+        "page": "channels",
+        "project": channel.project,
+        "form": form,
+        "profile": channel.project.owner_profile,
+        "is_new": is_new,
+    }
+    return render(request, "integrations/sms_form.html", ctx)
+
+
+@require_setting("TWILIO_AUTH")
+@login_required
+def add_call(request, code):
+    project = _get_rw_project_for_user(request, code)
+    if request.method == "POST":
+        form = forms.PhoneNumberForm(request.POST)
+        if form.is_valid():
+            channel = Channel(project=project, kind="call")
+            channel.name = form.cleaned_data["label"]
+            channel.value = form.get_json()
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
-        form = forms.AddSmsForm()
+        form = forms.PhoneNumberForm()
 
     ctx = {
         "page": "channels",
@@ -1511,52 +1707,103 @@ def add_sms(request, code):
         "form": form,
         "profile": project.owner_profile,
     }
-    return render(request, "integrations/add_sms.html", ctx)
+    return render(request, "integrations/add_call.html", ctx)
 
 
 @require_setting("TWILIO_USE_WHATSAPP")
 @login_required
-def add_whatsapp(request, code):
-    project = _get_project_for_user(request, code)
+def whatsapp_form(request, channel=None, code=None):
+    is_new = channel is None
+    if is_new:
+        project = _get_rw_project_for_user(request, code)
+        channel = Channel(project=project, kind="whatsapp")
+
     if request.method == "POST":
-        form = forms.AddSmsForm(request.POST)
+        form = forms.PhoneUpDownForm(request.POST)
         if form.is_valid():
-            channel = Channel(project=project, kind="whatsapp")
             channel.name = form.cleaned_data["label"]
-            channel.value = json.dumps(
-                {
-                    "value": form.cleaned_data["value"],
-                    "up": form.cleaned_data["up"],
-                    "down": form.cleaned_data["down"],
-                }
-            )
+            channel.value = form.get_json()
             channel.save()
 
-            channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            if is_new:
+                channel.assign_all_checks()
+            return redirect("hc-channels", channel.project.code)
+    elif is_new:
+        form = forms.PhoneUpDownForm()
     else:
-        form = forms.AddSmsForm()
+        form = forms.PhoneUpDownForm(
+            {
+                "label": channel.name,
+                "phone": channel.phone_number,
+                "up": channel.whatsapp_notify_up,
+                "down": channel.whatsapp_notify_down,
+            }
+        )
 
     ctx = {
         "page": "channels",
-        "project": project,
+        "project": channel.project,
         "form": form,
-        "profile": project.owner_profile,
+        "profile": channel.project.owner_profile,
+        "is_new": is_new,
     }
-    return render(request, "integrations/add_whatsapp.html", ctx)
+    return render(request, "integrations/whatsapp_form.html", ctx)
+
+
+@require_setting("SIGNAL_CLI_SOCKET")
+@login_required
+def signal_form(request, channel=None, code=None):
+    is_new = channel is None
+    if is_new:
+        project = _get_rw_project_for_user(request, code)
+        channel = Channel(project=project, kind="signal")
+
+    if request.method == "POST":
+        form = forms.PhoneUpDownForm(request.POST)
+        if form.is_valid():
+            channel.name = form.cleaned_data["label"]
+            channel.value = form.get_json()
+            channel.save()
+
+            if is_new:
+                channel.assign_all_checks()
+            return redirect("hc-channels", channel.project.code)
+    elif is_new:
+        form = forms.PhoneUpDownForm()
+    else:
+        form = forms.PhoneUpDownForm(
+            {
+                "label": channel.name,
+                "phone": channel.phone_number,
+                "up": channel.signal_notify_up,
+                "down": channel.signal_notify_down,
+            }
+        )
+
+    ctx = {
+        "page": "channels",
+        "project": channel.project,
+        "form": form,
+        "is_new": is_new,
+    }
+    return render(request, "integrations/signal_form.html", ctx)
 
 
 @require_setting("TRELLO_APP_KEY")
 @login_required
 def add_trello(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
     if request.method == "POST":
+        form = forms.AddTrelloForm(request.POST)
+        if not form.is_valid():
+            return HttpResponseBadRequest()
+
         channel = Channel(project=project, kind="trello")
-        channel.value = request.POST["settings"]
+        channel.value = form.get_value()
         channel.save()
 
         channel.assign_all_checks()
-        return redirect("hc-p-channels", project.code)
+        return redirect("hc-channels", project.code)
 
     return_url = settings.SITE_ROOT + reverse("hc-add-trello", args=[project.code])
     authorize_url = "https://trello.com/1/authorize?" + urlencode(
@@ -1582,7 +1829,7 @@ def add_trello(request, code):
 @require_setting("MATRIX_ACCESS_TOKEN")
 @login_required
 def add_matrix(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
     if request.method == "POST":
         form = forms.AddMatrixForm(request.POST)
         if form.is_valid():
@@ -1598,7 +1845,7 @@ def add_matrix(request, code):
 
             channel.assign_all_checks()
             messages.success(request, "The Matrix integration has been added!")
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddMatrixForm()
 
@@ -1614,7 +1861,8 @@ def add_matrix(request, code):
 @require_setting("APPRISE_ENABLED")
 @login_required
 def add_apprise(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
+
     if request.method == "POST":
         form = forms.AddAppriseForm(request.POST)
         if form.is_valid():
@@ -1624,7 +1872,7 @@ def add_apprise(request, code):
 
             channel.assign_all_checks()
             messages.success(request, "The Apprise integration has been added!")
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddAppriseForm()
 
@@ -1642,20 +1890,24 @@ def trello_settings(request):
         {
             "key": settings.TRELLO_APP_KEY,
             "token": token,
+            "filter": "open",
             "fields": "id,name",
             "lists": "open",
             "list_fields": "id,name",
         }
     )
 
-    r = requests.get(url)
-    ctx = {"token": token, "data": r.json()}
+    boards = requests.get(url).json()
+    num_lists = sum(len(board["lists"]) for board in boards)
+
+    ctx = {"token": token, "boards": boards, "num_lists": num_lists}
     return render(request, "integrations/trello_settings.html", ctx)
 
 
+@require_setting("MSTEAMS_ENABLED")
 @login_required
 def add_msteams(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddUrlForm(request.POST)
@@ -1665,7 +1917,7 @@ def add_msteams(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddUrlForm()
 
@@ -1673,13 +1925,19 @@ def add_msteams(request, code):
     return render(request, "integrations/add_msteams.html", ctx)
 
 
+@require_setting("PROMETHEUS_ENABLED")
 @login_required
 def add_prometheus(request, code):
-    project = _get_project_for_user(request, code)
-    ctx = {"page": "channels", "project": project}
+    project, rw = _get_project_for_user(request, code)
+    ctx = {
+        "page": "channels",
+        "project": project,
+        "site_scheme": urlparse(settings.SITE_ROOT).scheme,
+    }
     return render(request, "integrations/add_prometheus.html", ctx)
 
 
+@require_setting("PROMETHEUS_ENABLED")
 def metrics(request, code, key):
     if len(key) != 32:
         return HttpResponseBadRequest()
@@ -1704,6 +1962,14 @@ def metrics(request, code, key):
             value = 0 if check.get_status() == "down" else 1
             yield TMPL % (esc(check.name), esc(check.tags), check.unique_key, value)
 
+        yield "\n"
+        yield "# HELP hc_check_started Whether the check is currently started (1 for yes, 0 for no).\n"
+        yield "# TYPE hc_check_started gauge\n"
+        TMPL = """hc_check_started{name="%s", tags="%s", unique_key="%s"} %d\n"""
+        for check in checks:
+            value = 1 if check.last_start is not None else 0
+            yield TMPL % (esc(check.name), esc(check.tags), check.unique_key, value)
+
         tags_statuses, num_down = _tags_statuses(checks)
         yield "\n"
         yield "# HELP hc_tag_up Whether all checks with this tag are up (1 for yes, 0 for no).\n"
@@ -1726,10 +1992,10 @@ def metrics(request, code, key):
     return HttpResponse(output(checks), content_type="text/plain")
 
 
-
+@require_setting("SPIKE_ENABLED")
 @login_required
 def add_spike(request, code):
-    project = _get_project_for_user(request, code)
+    project = _get_rw_project_for_user(request, code)
 
     if request.method == "POST":
         form = forms.AddUrlForm(request.POST)
@@ -1739,10 +2005,88 @@ def add_spike(request, code):
             channel.save()
 
             channel.assign_all_checks()
-            return redirect("hc-p-channels", project.code)
+            return redirect("hc-channels", project.code)
     else:
         form = forms.AddUrlForm()
 
     ctx = {"page": "channels", "project": project, "form": form}
     return render(request, "integrations/add_spike.html", ctx)
 
+
+@require_setting("LINENOTIFY_CLIENT_ID")
+@login_required
+def add_linenotify(request, code):
+    project = _get_rw_project_for_user(request, code)
+
+    state = token_urlsafe()
+    authorize_url = " https://notify-bot.line.me/oauth/authorize?" + urlencode(
+        {
+            "client_id": settings.LINENOTIFY_CLIENT_ID,
+            "redirect_uri": settings.SITE_ROOT + reverse(add_linenotify_complete),
+            "response_type": "code",
+            "state": state,
+            "scope": "notify",
+        }
+    )
+
+    ctx = {
+        "page": "channels",
+        "project": project,
+        "authorize_url": authorize_url,
+    }
+
+    request.session["add_linenotify"] = (state, str(project.code))
+    return render(request, "integrations/add_linenotify.html", ctx)
+
+
+@require_setting("LINENOTIFY_CLIENT_ID")
+@login_required
+def add_linenotify_complete(request):
+    if "add_linenotify" not in request.session:
+        return HttpResponseForbidden()
+
+    state, code = request.session.pop("add_linenotify")
+    if request.GET.get("state") != state:
+        return HttpResponseForbidden()
+
+    project = _get_rw_project_for_user(request, code)
+    if request.GET.get("error") == "access_denied":
+        messages.warning(request, "LINE Notify setup was cancelled.")
+        return redirect("hc-channels", project.code)
+
+    # Exchange code for access token
+    result = requests.post(
+        "https://notify-bot.line.me/oauth/token",
+        {
+            "grant_type": "authorization_code",
+            "code": request.GET.get("code"),
+            "redirect_uri": settings.SITE_ROOT + reverse(add_linenotify_complete),
+            "client_id": settings.LINENOTIFY_CLIENT_ID,
+            "client_secret": settings.LINENOTIFY_CLIENT_SECRET,
+        },
+    )
+
+    doc = result.json()
+    if doc.get("status") != 200:
+        messages.warning(request, "Something went wrong.")
+        return redirect("hc-channels", project.code)
+
+    # Fetch notification target's name, will use it as channel name:
+    token = doc["access_token"]
+    result = requests.get(
+        "https://notify-api.line.me/api/status",
+        headers={"Authorization": "Bearer %s" % token},
+    )
+    doc = result.json()
+
+    channel = Channel(kind="linenotify", project=project)
+    channel.name = doc.get("target")
+    channel.value = token
+    channel.save()
+    channel.assign_all_checks()
+    messages.success(request, "The LINE Notify integration has been added!")
+
+    return redirect("hc-channels", project.code)
+
+
+# Forks: add custom views after this line
