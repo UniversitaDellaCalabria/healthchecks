@@ -236,6 +236,8 @@ APPRISE_ENABLED = envbool("APPRISE_ENABLED", "False")
 # Local shell commands
 SHELL_ENABLED = envbool("SHELL_ENABLED", "False")
 
+# from django 3.2
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 if os.path.exists(os.path.join(BASE_DIR, "hc/local_settings.py")):
     from .local_settings import *
