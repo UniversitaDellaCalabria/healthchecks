@@ -20,13 +20,21 @@ from django.contrib import admin
 from django.contrib.auth.views import LogoutView
 from django.urls import include, path
 
-saml2_url_prefix = ''
+saml2_url_prefix = 'saml2'
 
 urlpatterns = [
+    path('{}/login/'.format(saml2_url_prefix),
+                           views.LoginView.as_view(), name='saml2_login'),
     path('{}/acs/'.format(saml2_url_prefix),
-                          views.AssertionConsumerServiceView.as_view(), name='saml2_acs'),
-
-    path(f'{saml2_url_prefix}', include('djangosaml2.urls')),
+                           views.AssertionConsumerServiceView.as_view(), name='saml2_acs'),
+    path('{}/logout/'.format(saml2_url_prefix),
+                           views.LogoutInitView.as_view(), name='saml2_logout'),
+    path('{}/ls/'.format(saml2_url_prefix),
+                           views.LogoutView.as_view(), name='saml2_ls'),
+    path('{}/ls/post/'.format(saml2_url_prefix),
+                           views.LogoutView.as_view(), name='saml2_ls_post'),
+    path('{}/metadata/'.format(saml2_url_prefix),
+                           views.MetadataView.as_view(), name='saml2_metadata'),
 
     # system local
     path('logout/', LogoutView.as_view(),

@@ -26,5 +26,5 @@ urlpatterns = [
 
 if 'saml2_sp' in settings.INSTALLED_APPS:
     import saml2_sp.urls
-    urlpatterns += path('saml2', include((saml2_sp.urls, 'djangosaml2',))),
+    urlpatterns += path("", include((saml2_sp.urls, 'djangosaml2',))),
 
