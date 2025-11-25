@@ -5,8 +5,10 @@ ALLOWED_HOSTS = ['*']
 TIME_ZONE = "Europe/Rome"
 
 # SITE_ROOT = "https://my-monitoring-project.com"
-SITE_NAME = "Unical Healthchecks"
-DEFAULT_FROM_EMAIL = "noreply-healthchecks@unical.it"
+
+# PING_ENDPOINT = "https://my-monitoring-project.com/ping/"
+# SITE_NAME = "My Monitoring Project"
+# DEFAULT_FROM_EMAIL = "noreply@my-monitoring-project.com"
 
 # Uncomment to use Postgres:
 # DATABASES = {
@@ -35,7 +37,8 @@ EMAIL_HOST = "smtpservizi.unical.it"
 EMAIL_PORT = 587
 # EMAIL_HOST_USER = "username"
 # EMAIL_HOST_PASSWORD = "password"
-EMAIL_USE_TLS = True
+# EMAIL_USE_TLS = True
+# EMAIL_USE_SSL = False
 
 ADMINS = [('Giuseppe De Marco', 'giuseppe.demarco@unical.it'),
           ('Francesco Filicetti', 'francesco.filicetti@unical.it'),]

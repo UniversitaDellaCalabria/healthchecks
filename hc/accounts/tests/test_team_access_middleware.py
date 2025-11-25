@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 from django.contrib.auth.models import User
 from django.test import TestCase
+
 from hc.accounts.models import Profile
 
 
 class TeamAccessMiddlewareTestCase(TestCase):
-    def test_it_handles_missing_profile(self):
+    def test_it_handles_missing_profile(self) -> None:
         user = User(username="ned", email="ned@example.org")
         user.set_password("password")
         user.save()

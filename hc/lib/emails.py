@@ -1,37 +1,76 @@
+from __future__ import annotations
+
+import time
+from email.utils import make_msgid
+from smtplib import SMTPDataError, SMTPServerDisconnected
 from threading import Thread
+from typing import Any
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives as Message
 from django.template.loader import render_to_string as render
 
 
 class EmailThread(Thread):
-    def __init__(self, subject, text, html, to, headers):
+    MAX_TRIES = 3
+
+    def __init__(self, message: Message) -> None:
         Thread.__init__(self)
-        self.subject = subject
-        self.text = text
-        self.html = html
-        self.to = to
-        self.headers = headers
+        self.message = message
 
-    def run(self):
-        msg = EmailMultiAlternatives(
-            self.subject, self.text, to=(self.to,), headers=self.headers
-        )
+    def run(self) -> None:
+        for attempt in range(0, self.MAX_TRIES):
+            try:
+                # Make sure each retry creates a new connection:
+                self.message.connection = None
+                self.message.send()
+                # No exception--great! Return from the retry loop
+                return
+            except (SMTPServerDisconnected, SMTPDataError) as e:
+                if attempt + 1 == self.MAX_TRIES:
+                    # This was the last attempt and it failed:
+                    # re-raise the exception
+                    raise e
 
-        msg.attach_alternative(self.html, "text/html")
-        msg.send()
+                # Wait 1s before retrying
+                time.sleep(1)
 
 
-def send(name, to, ctx, headers={}):
-    ctx["SITE_ROOT"] = settings.SITE_ROOT
+def make_message(
+    name: str, to: str | list[str], ctx: dict[str, Any], headers: dict[str, str] = {}
+) -> Message:
+    subject = render(f"emails/{name}-subject.html", ctx).strip()
+    body = render(f"emails/{name}-body-text.html", ctx)
+    html = render(f"emails/{name}-body-html.html", ctx)
 
-    subject = render("emails/%s-subject.html" % name, ctx).strip()
-    text = render("emails/%s-body-text.html" % name, ctx)
-    html = render("emails/%s-body-html.html" % name, ctx)
+    domain = settings.DEFAULT_FROM_EMAIL.split("@")[-1].strip(">")
+    headers["Message-ID"] = make_msgid(domain=domain)
 
-    t = EmailThread(subject, text, html, to, headers)
-    if hasattr(settings, "BLOCKING_EMAILS"):
+    # Make sure the From: header contains our display From: address
+    if "From" not in headers:
+        headers["From"] = settings.DEFAULT_FROM_EMAIL
+
+    # If EMAIL_MAIL_FROM_TMPL is set, prepare a custom MAIL FROM address
+    bounce_id = headers.pop("X-Bounce-ID", "bounces")
+    if settings.EMAIL_MAIL_FROM_TMPL:
+        from_email = settings.EMAIL_MAIL_FROM_TMPL % bounce_id
+    else:
+        from_email = settings.DEFAULT_FROM_EMAIL
+
+    to_list = [to] if isinstance(to, str) else to
+    msg = Message(subject, body, from_email, to_list, headers=headers)
+    msg.attach_alternative(html, "text/html")
+    return msg
+
+
+def send(message: Message, block: bool = False) -> None:
+    assert settings.EMAIL_HOST, (
+        "No SMTP configuration,"
+        " see https://github.com/healthchecks/healthchecks#sending-emails"
+    )
+
+    t = EmailThread(message)
+    if block or hasattr(settings, "BLOCKING_EMAILS"):
         # In tests, we send emails synchronously
         # so we can inspect the outgoing messages
         t.run()
@@ -41,37 +80,53 @@ def send(name, to, ctx, headers={}):
         t.start()
 
 
-def login(to, ctx):
-    send("login", to, ctx)
+def login(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("login", to, ctx))
 
 
-def transfer_request(to, ctx):
-    send("transfer-request", to, ctx)
+def transfer_request(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("transfer-request", to, ctx))
 
 
-def set_password(to, ctx):
-    send("set-password", to, ctx)
+def alert(to: str, ctx: dict[str, Any], headers: dict[str, str]) -> None:
+    send(make_message("alert", to, ctx, headers=headers))
 
 
-def change_email(to, ctx):
-    send("change-email", to, ctx)
+def verify_email(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("verify-email", to, ctx))
 
 
-def alert(to, ctx, headers={}):
-    send("alert", to, ctx, headers)
+def report(to: str, ctx: dict[str, Any], headers: dict[str, str]) -> None:
+    m = make_message("report", to, ctx, headers=headers)
+    send(m, block=True)
 
 
-def verify_email(to, ctx):
-    send("verify-email", to, ctx)
+def nag(to: str, ctx: dict[str, Any], headers: dict[str, str]) -> None:
+    m = make_message("nag", to, ctx, headers=headers)
+    send(m, block=True)
 
 
-def report(to, ctx, headers={}):
-    send("report", to, ctx, headers)
+def deletion_notice(to: str, ctx: dict[str, Any]) -> None:
+    m = make_message("deletion-notice", to, ctx)
+    send(m, block=True)
 
 
-def deletion_notice(to, ctx, headers={}):
-    send("deletion-notice", to, ctx, headers)
+def deletion_scheduled(to: list[str], ctx: dict[str, Any]) -> None:
+    m = make_message("deletion-scheduled", to, ctx)
+    send(m, block=True)
 
 
-def sms_limit(to, ctx):
-    send("sms-limit", to, ctx)
+def sms_limit(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("sms-limit", to, ctx))
+
+
+def call_limit(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("phone-call-limit", to, ctx))
+
+
+def sudo_code(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("sudo-code", to, ctx))
+
+
+def signal_rate_limited(to: str, ctx: dict[str, Any]) -> None:
+    send(make_message("signal-rate-limited", to, ctx))

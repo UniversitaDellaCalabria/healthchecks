@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 from hc.api.models import Check
 from hc.test import BaseTestCase
 
 
 class RemoveProjectTestCase(BaseTestCase):
-    def setUp(self):
-        super(RemoveProjectTestCase, self).setUp()
+    def setUp(self) -> None:
+        super().setUp()
 
-        self.url = "/projects/%s/remove/" % self.project.code
+        self.url = f"/projects/{self.project.code}/remove/"
 
-    def test_it_works(self):
+    def test_it_works(self) -> None:
         Check.objects.create(project=self.project, tags="foo a-B_1  baz@")
 
         self.client.login(username="alice@example.org", password="password")
@@ -21,12 +23,12 @@ class RemoveProjectTestCase(BaseTestCase):
         # Check should be gone
         self.assertFalse(Check.objects.exists())
 
-    def test_it_rejects_get(self):
+    def test_it_rejects_get(self) -> None:
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 405)
 
-    def test_it_checks_access(self):
+    def test_it_checks_access(self) -> None:
         self.client.login(username="bob@example.org", password="password")
         r = self.client.post(self.url)
         self.assertEqual(r.status_code, 404)

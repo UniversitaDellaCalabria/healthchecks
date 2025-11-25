@@ -1,0 +1,5 @@
+{% if status == "down" %}
+    🔴 {{ check.name_then_code|safe }}
+{% else %}
+    🟢 {{ check.name_then_code|safe }}
+{% endif %}

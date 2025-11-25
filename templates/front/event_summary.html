@@ -1,5 +1,5 @@
 {% if event.channel.kind == "email" %}
-    Sent email to {{ event.channel.email_value }}
+    Sent email to {{ event.channel.email.value }}
 {% elif event.channel.kind == "slack" %}
     Sent Slack alert
     {% if event.channel.slack_channel %}
@@ -11,30 +11,52 @@
         ({{ event.channel.name }})
     {% endif %}
 {% elif event.channel.kind == "webhook" %}
-    Called webhook {{ event.channel.url_down }}
+    Called webhook {{ event.channel.down_webhook_spec.url }}
 {% elif event.channel.kind == "msteams" %}
     Sent alert to Microsoft Teams
     {% if event.channel.name %}
         ({{ event.channel.name }})
     {% endif %}
 {% elif event.channel.kind == "sms" %}
-    Sent SMS to {{ event.channel.sms_number }}
+    Sent SMS to {{ event.channel.phone.value }}
     {% if event.channel.name %}
         ({{ event.channel.name }})
     {% endif %}
 {% elif event.channel.kind == "whatsapp" %}
-    Sent WhatsApp message to {{ event.channel.sms_number }}
+    Sent WhatsApp message to {{ event.channel.phone.value }}
     {% if event.channel.name %}
         ({{ event.channel.name }})
     {% endif %}
 {% elif event.channel.kind == "trello" %}
     Added Trello card in
-    board "{{ event.channel.trello_board_list|first }}"
+    board "{{ event.channel.trello.board_name }}"
 {% elif event.channel.kind == "shell" %}
     Executed a shell command
     {% if event.channel.name %}
         ({{ event.channel.name }})
     {% endif %}
+{% elif event.channel.kind == "call" %}
+    Made a phone call to {{ event.channel.phone.value }}
+    {% if event.channel.name %}
+        ({{ event.channel.name }})
+    {% endif %}
+{% elif event.channel.kind == "signal" %}
+    Sent Signal message to {{ event.channel.phone.value }}
+    {% if event.channel.name %}
+        ({{ event.channel.name }})
+    {% endif %}
+{% elif event.channel.kind == "gotify" %}
+    Sent a Gotify notification
+    {% if event.channel.name %}
+        ({{ event.channel.name }})
+    {% endif %}
+{% elif event.channel.kind == "group" %}
+    Sent group notification
+    {% if event.channel.name %}
+        to group "{{ event.channel.name }}"
+    {% endif %}
+{% elif event.channel.kind == "github" %}
+    Created GitHub issue in {{ event.channel.github.repo }}
 {% else %}
     Sent alert to {{ event.channel.get_kind_display }}
     {% if event.channel.name %}

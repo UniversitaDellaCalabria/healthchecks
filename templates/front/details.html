@@ -1,24 +1,19 @@
-{% extends "base.html" %}
+{% extends "base_project.html" %}
 {% load compress humanize static hc_extras %}
 
 {% block title %}{{ check|down_title }}{% endblock %}
+{% block favicon %}
+    {% if check.status == "down" %}
+    <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon_down.svg' %}">
+    {% else %}
+    <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
+    {% endif %}
+{% endblock %}
 
 
 {% block content %}
 
 <div class="row">
-    {% if is_new %}
-    <div class="col-sm-12">
-        <p id="new-check-alert" class="alert alert-success">
-            <strong>Your new check is ready!</strong>
-            You can now
-            <a data-target="edit-name" href="#" >give it a name</a>
-            or
-            <a data-target="edit-timeout" href="#" >set its schedule</a>.
-        </p>
-    </div>
-    {% endif %}
-
     {% if is_copied %}
     <div class="col-sm-12">
         <p id="new-check-alert" class="alert alert-success">
@@ -41,7 +36,9 @@
     <div id="details-head" class="col-sm-12">
         <h1>
             {{ check.name_then_code }}
+            {% if rw %}
             <small><a id="edit-name" href="#">(edit&hellip;)</a></small>
+            {% endif %}
         </h1>
         {% for tag in check.tags_list %}
             <span class="label label-tag">{{ tag }}</span>
@@ -49,6 +46,7 @@
     </div>
 
     <div class="col-sm-5">
+        {% if rw %}
         <div class="details-block">
             <h2>Description</h2>
             {% if check.desc %}
@@ -62,28 +60,43 @@
             <small><a id="edit-desc" href="#">Add description&hellip;</a></small>
             {% endif %}
         </div>
+        {% elif check.desc %}
+        <div class="details-block">
+            <h2>Description</h2>
+            {{ check.desc|linebreaks|urlize }}
+        </div>
+        {% endif %}
 
         <div id="how-to-ping" class="details-block">
-            <h2>How To Ping</h2>
+            <h2>
+                How To Ping
+                {% if rw %}
+                    <div class="btn-group pull-right">
+                        <a href="?urls=uuid" class="btn btn-default btn-xs {% if not project.show_slugs %}active{% endif %}">uuid</a>
+                        <a href="?urls=slug" class="btn btn-default btn-xs {% if project.show_slugs %}active{% endif %}">slug</a>
+                </div>
+                {% endif %}
+            </h2>
             <div>
                 <p>
                     Keep this check up by making HTTP
                     {% if check.methods == "POST" %}POST{% endif %}
                     requests to this URL:
                 </p>
+                {% if check.url %}
                 <code>{{ check.url }}</code>
-                <p>
-                    {% if check.subject %}
-                    Or by sending emails with "{{ check.subject }}"
-                    in the subject line to this address:
-                    {% else %}
-                    Or by sending emails to this address:
-                    {% endif %}
-                </p>
+                {% else %}
+                <code>(unavailable, set slug first)</code>
+                {% endif %}
+                <p>Or by sending email to:</p>
+                {% if check.email %}
                 <code>{{ check.email }}</code>
+                {% else %}
+                <code>(unavailable, set slug first)</code>
+                {% endif %}
 
                 <p>You can also explicitly
-                    <a href="{% url 'hc-serve-doc' 'signalling_failures' %}">
+                    <a href="{% url 'hc-serve-doc' 'signaling_failures' %}">
                         signal a failure</a>
                     and
                     <a href="{% url 'hc-serve-doc' 'measuring_script_run_time' %}">
@@ -91,10 +104,13 @@
                 </p>
             </div>
             <div class="text-right">
+                {% if rw %}
                 <button
                     data-toggle="modal"
                     data-target="#filtering-rules-modal"
                     class="btn btn-sm btn-default">Filtering Rules&hellip;</button>
+                {% endif %}
+                {% if check.url %}
                 <button
                     data-toggle="modal"
                     data-target="#show-usage-modal"
@@ -103,28 +119,22 @@
                     data-label="Copy URL"
                     data-clipboard-text="{{ check.url }}"
                     class="btn btn-sm btn-default copy-btn">Copy URL</button>
+                {% endif %}
             </div>
         </div>
 
         <div class="details-block">
             <h2>Current Status</h2>
-            <table>
-                <tr>
-                    <td>
-                        <span id="log-status-icon" class="status icon-{{ check.get_status }}"></span>
-                    </td>
-                    <td >
-                        <p id="log-status-text">{% include "front/log_status_text.html" %}</p>
-                    </td>
-                </tr>
-                <tr>
-                    <td></td>
-                    <td id="downtimes">
-                        {% include "front/details_downtimes.html" %}
-                    </td>
-                </tr>
-            </table>
+            <div id="current-status-indicator">
+                <span id="current-status-icon" class="status ic-{{ check.get_status }}"></span>
+                <div id="current-status-spinner" class="spinner {% if check.last_start %}started{% endif %}"></div>
+            </div>
+            <div id="current-status-content">
+                <p id="current-status-text">{% include "front/log_status_text.html" %}</p>
+                {% include "front/details_downtimes.html" %}
+            </div>
             <div class="text-right">
+                {% if rw %}
                 <form action="{% url 'hc-pause' check.code %}" method="post">
                     {% csrf_token %}
                     <input
@@ -133,11 +143,23 @@
                         {% if check.status == "paused" %}disabled{% endif %}
                         class="btn btn-sm btn-default" value="Pause" />
                 </form>
+                {% endif %}
 
+                {% if check.url %}
+                {% if project.show_slugs and not project.ping_key %}
+                    {% if rw %}
+                    <button
+                        data-toggle="modal"
+                        data-target="#no-ping-key-modal"
+                        class="btn btn-sm btn-default">Ping Now!</button>
+                    {% endif %}
+                {% else %}
                 <button
                     id="ping-now"
                     data-url="{{ check.url }}"
                     class="btn btn-sm btn-default">Ping Now!</button>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
 
@@ -150,7 +172,7 @@
                     <td>
                         <span class="value">{{ check.timeout|hc_duration }}</span>
                         <div class="subtitle">
-                            (Expected time between pings)
+                            (The expected time between pings)
                         </div>
                     </td>
                     {% elif check.kind == "cron" %}
@@ -158,9 +180,14 @@
                     <td>
                         <span class="value">{{ check.schedule }}</span>
                     </td>
+                    {% elif check.kind == "oncalendar" %}
+                    <th>OnCalendar Expr.</th>
+                    <td>
+                        <span class="value">{{ check.schedule|linebreaksbr }}</span>
+                    </td>
                     {% endif %}
                 </tr>
-                {% if check.kind == "cron" %}
+                {% if check.kind == "cron" or check.kind == "oncalendar" %}
                 <tr>
                     <th>Time Zone</th>
                     <td>
@@ -173,30 +200,50 @@
                     <td>
                         <span class="value">{{ check.grace|hc_duration }}</span>
                         <div class="subtitle">
-                            (When a check is late, how long to wait until an alert is sent)
+                            (When a check is late, how long to wait to send an alert)
                         </div>
                     </td>
                 </tr>
             </table>
-            <div class="text-right">
+            {% if rw %}
+            <div class="text-right rw">
                 <button
                     id="edit-timeout"
                     class="btn btn-sm btn-default timeout-grace"
                     data-code="{{ check.code }}"
                     data-status-url="{% url 'hc-status-single' check.code %}"
                     data-kind="{{ check.kind }}"
-                    data-timeout="{{ check.timeout.total_seconds }}"
-                    data-grace="{{ check.grace.total_seconds }}"
+                    data-timeout="{{ check.timeout.total_seconds|floatformat:'0' }}"
+                    data-grace="{{ check.grace.total_seconds|floatformat:'0' }}"
                     data-schedule="{{ check.schedule }}"
                     data-tz="{{ check.tz }}">
                     Change Schedule&hellip;</button>
             </div>
+            {% endif %}
         </div>
 
         <div class="details-block">
+            {% if group_channels %}
+            <h2>Notification Groups</h2>
+            <table class="details-integrations table {% if rw %}rw{% endif %}">
+                {% for channel in group_channels %}
+                    <tr data-url="{% url 'hc-switch-channel' check.code channel.code %}" {% if channel in enabled_channels %}class="on"{% endif %}>
+                        <th>
+                            <span class="label">
+                                {% if channel in enabled_channels %}ON{% else %}OFF{% endif %}
+                            </span>
+                        </th>
+                        <td>
+                            <span class="ic-{{ channel.kind }}"></span>
+                            {{ channel }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+            {% endif %}
             <h2>Notification Methods</h2>
             {% if channels %}
-            <table id="details-integrations" class="table">
+            <table class="details-integrations table {% if rw %}rw{% endif %}">
             {% for channel in channels %}
                 <tr data-url="{% url 'hc-switch-channel' check.code channel.code %}" {% if channel in enabled_channels %}class="on"{% endif %}>
                     <th>
@@ -205,7 +252,7 @@
                         </span>
                     </th>
                     <td>
-                        <span class="icon-{{ channel.kind }}"></span>
+                        <span class="ic-{{ channel.kind }}"></span>
                         {{ channel }}
                     </td>
                 </tr>
@@ -216,20 +263,20 @@
                 No notification methods set up yet.
                 <br />
                 Set up your preferred methods of notification in the
-                <a href="{% url 'hc-p-channels' project.code %}">Integrations</a>
+                <a href="{% url 'hc-channels' project.code %}">Integrations</a>
                 page.
             </div>
             {% endif %}
         </div>
 
+        {% if rw %}
         <div class="details-block">
             <h2>Danger Zone</h2>
-            <p>Copy, Transfer, or permanently remove this check.</p>
+            <p>Copy, transfer, or permanently remove this check.</p>
 
             <div class="text-right">
                 {% if project.num_checks_available > 0 %}
                 <button
-                    id="copy-btn"
                     data-toggle="modal"
                     data-target="#copy-modal"
                     class="btn btn-sm btn-default">Create a Copy&hellip;</button>
@@ -244,33 +291,42 @@
                 </button>
                 &nbsp;
                 <button
-                    id="details-remove-check"
+                    data-toggle="modal"
+                    data-target="#clear-events-modal"
+                    class="btn btn-sm btn-remove">Clear Events</button>
+                <button
                     data-toggle="modal"
                     data-target="#remove-check-modal"
-                    class="btn btn-sm btn-default">Remove</button>
+                    class="btn btn-sm btn-remove">Remove</button>
             </div>
         </div>
-
+        {% endif %}
     </div>
 
-    <div id="events" class="col-sm-7">
+    <div id="events" class="col-sm-7" data-status-url="{% url 'hc-status-single' check.code %}">
         <h2>
-            Log
+            Events
             <small class="hidden-xs">Click on individual items for details</small>
             <div id="format-switcher" class="btn-group pull-right" data-toggle="buttons">
+                {% if check.kind == "simple" or check.tz != "UTC" %}
                 <label class="btn btn-default btn-xs" data-format="UTC">
                     <input type="radio" name="date-format">
                     UTC
                 </label>
+                {% endif %}
 
-                {% if check.kind == "cron" and check.tz != "UTC" %}
-                <label class="btn btn-default btn-xs" data-format="{{ check.tz }}">
+                {% if check.kind == "cron" or check.kind == "oncalendar" %}
+                <label
+                    class="btn btn-default btn-xs active"
+                    data-format="{{ check.tz }}">
                     <input type="radio" name="date-format">
                     {{ check.tz }}
                 </label>
                 {% endif %}
 
-                <label class="btn btn-default btn-xs active" data-format="local">
+                <label
+                    class="btn btn-default btn-xs {% if check.kind == 'simple' %}active{% endif %}"
+                    data-format="local">
                     <input type="radio" name="date-format">
                     Browser's time zone
                 </label>
@@ -304,24 +360,50 @@
 {% include "front/update_timeout_modal.html" %}
 {% include "front/show_usage_modal.html" %}
 {% include "front/remove_check_modal.html" %}
+{% include "front/clear_events_modal.html" %}
 {% include "front/filtering_rules_modal.html" %}
 {% include "front/copy_modal.html" %}
+
+{% if rw and project.show_slugs and not project.ping_key %}
+<div id="no-ping-key-modal" class="modal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4>Ping Key Required</h4>
+            </div>
+            <div class="modal-body">
+                <p>This project does not yet have a ping key.<br />
+                   To ping this check, please generate the
+                   ping key first.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                <a href="{% url 'hc-project-settings' project.code %}" class="btn btn-primary">Open Project Settings</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% endblock %}
 
 {% block scripts %}
+<script id="common-timezones" type="data">{{ common_timezones|join:"," }}</script>
+<script id="all-timezones" type="data">{{ timezones|join:"," }}</script>
 {% compress js %}
-<script src="{% static 'js/jquery-2.1.4.min.js' %}"></script>
-<script src="{% static 'js/bootstrap.min.js' %}"></script>
 <script src="{% static 'js/selectize.min.js' %}"></script>
-<script src="{% static 'js/clipboard.min.js' %}"></script>
-<script src="{% static 'js/bootstrap-select.min.js' %}"></script>
 <script src="{% static 'js/nouislider.min.js' %}"></script>
 <script src="{% static 'js/snippet-copy.js' %}"></script>
 <script src="{% static 'js/moment.min.js' %}"></script>
 <script src="{% static 'js/moment-timezone-with-data-10-year-range.min.js' %}"></script>
+<script src="{% static 'js/purify.min.js' %}"></script>
+<script src="{% static 'js/initialize-timezone-selects.js' %}"></script>
 <script src="{% static 'js/update-timeout-modal.js' %}"></script>
 <script src="{% static 'js/adaptive-setinterval.js' %}"></script>
+<script src="{% static 'js/ping_details.js' %}"></script>
 <script src="{% static 'js/details.js' %}"></script>
+<script src="{% static 'js/slug-suggestions.js' %}"></script>
 {% endcompress %}
 {% endblock %}

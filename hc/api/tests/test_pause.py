@@ -1,49 +1,65 @@
+from __future__ import annotations
+
 from datetime import timedelta as td
 
 from django.utils.timezone import now
-from hc.api.models import Check
+from hc.api.models import Check, Flip
 from hc.test import BaseTestCase
 
 
 class PauseTestCase(BaseTestCase):
-    def test_it_works(self):
-        check = Check.objects.create(project=self.project, status="up")
+    def setUp(self) -> None:
+        super().setUp()
 
-        url = "/api/v1/checks/%s/pause" % check.code
-        r = self.client.post(
-            url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
+        self.check = Check.objects.create(project=self.project, status="up")
+        self.url = f"/api/v3/checks/{self.check.code}/pause"
+
+    def test_it_works(self) -> None:
+        r = self.csrf_client.post(
+            self.url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
         )
-
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Access-Control-Allow-Origin"], "*")
 
-        check.refresh_from_db()
-        self.assertEqual(check.status, "paused")
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.status, "paused")
 
-    def test_it_handles_options(self):
-        check = Check.objects.create(project=self.project, status="up")
+        # It should also create a Flip object, needed for accurate downtime
+        # tracking in Check.downtimes():
+        flip = Flip.objects.get()
+        self.assertEqual(flip.old_status, "up")
+        self.assertEqual(flip.new_status, "paused")
+        # should be marked as processed from the beginning, so sendalerts ignores it
+        self.assertTrue(flip.processed)
 
-        r = self.client.options("/api/v1/checks/%s/pause" % check.code)
+    def test_it_accepts_api_key_in_post_body(self) -> None:
+        payload = {"api_key": "X" * 32}
+        r = self.csrf_client.post(self.url, payload, content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.status, "paused")
+
+    def test_it_handles_options(self) -> None:
+        r = self.client.options(self.url)
         self.assertEqual(r.status_code, 204)
         self.assertIn("POST", r["Access-Control-Allow-Methods"])
 
-    def test_it_only_allows_post(self):
-        url = "/api/v1/checks/1659718b-21ad-4ed1-8740-43afc6c41524/pause"
-
-        r = self.client.get(url, HTTP_X_API_KEY="X" * 32)
+    def test_it_only_allows_post(self) -> None:
+        r = self.client.get(self.url, HTTP_X_API_KEY="X" * 32)
         self.assertEqual(r.status_code, 405)
 
-    def test_it_validates_ownership(self):
+    def test_it_validates_ownership(self) -> None:
         check = Check.objects.create(project=self.bobs_project, status="up")
 
-        url = "/api/v1/checks/%s/pause" % check.code
+        url = f"/api/v1/checks/{check.code}/pause"
         r = self.client.post(
             url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
         )
 
         self.assertEqual(r.status_code, 403)
 
-    def test_it_validates_uuid(self):
+    def test_it_validates_uuid(self) -> None:
         url = "/api/v1/checks/not-uuid/pause"
         r = self.client.post(
             url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
@@ -51,7 +67,7 @@ class PauseTestCase(BaseTestCase):
 
         self.assertEqual(r.status_code, 404)
 
-    def test_it_handles_missing_check(self):
+    def test_it_handles_missing_check(self) -> None:
         url = "/api/v1/checks/07c2f548-9850-4b27-af5d-6c9dc157ec02/pause"
         r = self.client.post(
             url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
@@ -59,20 +75,37 @@ class PauseTestCase(BaseTestCase):
 
         self.assertEqual(r.status_code, 404)
 
-    def test_it_clears_last_start_alert_after(self):
-        check = Check(project=self.project, status="up")
-        check.last_start = now()
-        check.alert_after = check.last_start + td(hours=1)
-        check.save()
+    def test_it_clears_last_start_alert_after(self) -> None:
+        self.check.last_start = now()
+        self.check.alert_after = self.check.last_start + td(hours=1)
+        self.check.save()
 
-        url = "/api/v1/checks/%s/pause" % check.code
         r = self.client.post(
-            url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
+            self.url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
         )
 
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Access-Control-Allow-Origin"], "*")
 
-        check.refresh_from_db()
-        self.assertEqual(check.last_start, None)
-        self.assertEqual(check.alert_after, None)
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.last_start, None)
+        self.assertEqual(self.check.alert_after, None)
+
+    def test_it_clears_next_nag_date(self) -> None:
+        self.profile.nag_period = td(hours=1)
+        self.profile.next_nag_date = now() + td(minutes=30)
+        self.profile.save()
+
+        self.client.post(
+            self.url, "", content_type="application/json", HTTP_X_API_KEY="X" * 32
+        )
+
+        self.profile.refresh_from_db()
+        self.assertIsNone(self.profile.next_nag_date)
+
+    def test_it_rejects_non_dict_post_body(self) -> None:
+        r = self.csrf_client.post(self.url, "123", content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            r.json()["error"], "json validation error: value is not an object"
+        )

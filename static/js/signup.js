@@ -1,33 +1,56 @@
-$(function () {
+window.addEventListener("DOMContentLoaded", function(e) {
+    var email = document.getElementById("signup-email");
+    var submitBtn = document.getElementById("signup-go");
+    if (!submitBtn) {
+        // Registration is not open, nothing to do here.
+        return;
+    }
+
+    function getTz() {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+        } catch(err) {
+            return "UTC";
+        }
+    }
 
     function submitForm() {
+        if (submitBtn.disabled) {
+            return;
+        }
+        submitBtn.disabled = true;
+
         var base = document.getElementById("base-url").getAttribute("href").slice(0, -1);
-        var email = $("#signup-email").val();
+        fetch(base + "/accounts/signup/csrf/")
+            .then(csrfResponse => csrfResponse.text())
+            .then(csrfToken => {
+                var payload = new FormData();
+                payload.append("identity", email.value);
+                payload.append("tz", getTz());
+                payload.append("csrfmiddlewaretoken", csrfToken);
+                return fetch(base + "/accounts/signup/", {method: "POST", body: payload});
 
-        $("#signup-go").prop("disabled", true);
-        $.ajax({
-            url: base + "/accounts/signup/",
-            type: "post",
-            data: {"identity": email},
-            success: function(data) {
-                $("#signup-result").html(data).show();
-                $("#signup-go").prop("disabled", false);
-            }
-        });
-
+            })
+            .then(signupResponse => signupResponse.text())
+            .then(text => {
+                var resultLine = document.getElementById("signup-result");
+                resultLine.innerHTML = text;
+                resultLine.style.display = "block";
+                submitBtn.disabled = false;
+            });
         return false;
     }
 
-    $("#signup-go").on("click", submitForm);
-
-    $("#signup-email").keypress(function (e) {
+    // Wire up the submit button and the Enter key
+    submitBtn.addEventListener("click", submitForm);
+    email.addEventListener("keyup", function(e) {
         if (e.which == 13) {
             return submitForm();
         }
     });
 
-    $("#signup-modal").on('shown.bs.modal', function () {
-        $("#signup-email").focus()
-    })
-
+    var modal = document.getElementById("signup-modal");
+    modal.addEventListener("shown.bs.modal", function() {
+        email.focus();
+    });
 });

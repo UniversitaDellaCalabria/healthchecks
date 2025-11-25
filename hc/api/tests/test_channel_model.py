@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 import json
 
-from hc.api.models import Channel
+from hc.api.models import Channel, WebhookSpec
 from hc.test import BaseTestCase
 
 
 class ChannelModelTestCase(BaseTestCase):
-    def test_webhook_spec_handles_mixed(self):
+    def test_webhook_spec_handles_mixed(self) -> None:
         c = Channel(kind="webhook")
         c.value = json.dumps(
             {
@@ -22,31 +24,26 @@ class ChannelModelTestCase(BaseTestCase):
 
         self.assertEqual(
             c.down_webhook_spec,
-            {
-                "method": "GET",
-                "url": "http://example.org",
-                "body": "",
-                "headers": {"X-Status": "X"},
-            },
+            WebhookSpec(
+                method="GET",
+                url="http://example.org",
+                body="",
+                headers={"X-Status": "X"},
+            ),
         )
 
         self.assertEqual(
             c.up_webhook_spec,
-            {
-                "method": "POST",
-                "url": "http://example.org/up/",
-                "body": "hello world",
-                "headers": {"X-Status": "OK"},
-            },
+            WebhookSpec(
+                method="POST",
+                url="http://example.org/up/",
+                body="hello world",
+                headers={"X-Status": "OK"},
+            ),
         )
 
-    def test_it_handles_legacy_opsgenie_value(self):
-        c = Channel(kind="opsgenie", value="foo123")
-        self.assertEqual(c.opsgenie_key, "foo123")
-        self.assertEqual(c.opsgenie_region, "us")
-
-    def test_it_handles_json_opsgenie_value(self):
+    def test_it_handles_json_opsgenie_value(self) -> None:
         c = Channel(kind="opsgenie")
         c.value = json.dumps({"key": "abc", "region": "eu"})
-        self.assertEqual(c.opsgenie_key, "abc")
-        self.assertEqual(c.opsgenie_region, "eu")
+        self.assertEqual(c.opsgenie.key, "abc")
+        self.assertEqual(c.opsgenie.region, "eu")

@@ -1,8 +1,11 @@
-from datetime import timedelta
+from __future__ import annotations
+
+from datetime import timedelta as td
 from unittest.mock import Mock
 
 from django.contrib.auth.models import User
-from django.utils import timezone
+from django.utils.timezone import now
+
 from hc.accounts.management.commands.pruneusers import Command
 from hc.accounts.models import Project
 from hc.api.models import Check
@@ -10,9 +13,9 @@ from hc.test import BaseTestCase
 
 
 class PruneUsersTestCase(BaseTestCase):
-    year_ago = timezone.now() - timedelta(days=365)
+    year_ago = now() - td(days=365)
 
-    def test_it_removes_old_never_logged_in_users(self):
+    def test_it_removes_old_never_logged_in_users(self) -> None:
         self.charlie.date_joined = self.year_ago
         self.charlie.save()
 
@@ -25,7 +28,7 @@ class PruneUsersTestCase(BaseTestCase):
         self.assertEqual(User.objects.filter(username="charlie").count(), 0)
         self.assertEqual(Check.objects.count(), 0)
 
-    def test_it_leaves_team_members_alone(self):
+    def test_it_leaves_team_members_alone(self) -> None:
         self.bob.date_joined = self.year_ago
         self.bob.last_login = self.year_ago
         self.bob.save()

@@ -1,4 +1,7 @@
 $(function () {
+    var base = document.getElementById("base-url").getAttribute("href").slice(0, -1);
+    var favicon = document.querySelector('link[rel="icon"]');
+
     $("#edit-name").click(function() {
         $('#update-name-modal').modal("show");
         $("#update-name-input").focus();
@@ -11,11 +14,14 @@ $(function () {
         return {value: tag}
     }
 
-    var allTags = $("#update-tags-input").data("all-tags");
+    // Use attr() instead of data() here, as data() converts attribute's string value
+    // to a JS object, but we need an unconverted string:
+    var allTags = $("#update-tags-input").attr("data-all-tags");
     var options = allTags ? allTags.split(" ").map(toOption) : [];
     $("#update-tags-input").selectize({
         create: true,
         createOnBlur: true,
+        selectOnTab: false,
         delimiter: " ",
         labelField: "value",
         searchField: ["value"],
@@ -36,7 +42,7 @@ $(function () {
         return false;
     });
 
-    $("#log-status-text").on("click", "#resume-btn", function() {
+    $("#current-status-text").on("click", "#resume-btn", function() {
         $("#resume-form").submit();
         return false;
     });
@@ -59,7 +65,7 @@ $(function () {
         }, 300);
     });
 
-    $("#details-integrations tr").click(function() {
+    $(".details-integrations.rw tr").click(function() {
         var isOn = $(this).toggleClass("on").hasClass("on");
         $(".label", this).text(isOn ? "ON" : "OFF");
 
@@ -72,9 +78,12 @@ $(function () {
         });
     });
 
-    var statusUrl = document.getElementById("edit-timeout").dataset.statusUrl;
+    var statusUrl = document.getElementById("events").dataset.statusUrl;
+    // Look up the active tz switch to determine the initial display timezone:
+    var lastFormat = $(".active", "#format-switcher").data("format");
     var lastStatusText = "";
     var lastUpdated = "";
+    var lastStarted = false;
     adaptiveSetInterval(function() {
         $.ajax({
             url: statusUrl + (lastUpdated ? "?u=" + lastUpdated : ""),
@@ -83,10 +92,15 @@ $(function () {
             success: function(data) {
                 if (data.status_text != lastStatusText) {
                     lastStatusText = data.status_text;
-                    $("#log-status-icon").attr("class", "status icon-" + data.status);
-                    $("#log-status-text").html(data.status_text);
+                    $("#current-status-icon").attr("class", "status ic-" + data.status);
+                    $("#current-status-text").html(data.status_text);
 
-                    $('#pause-btn').prop('disabled', data.status == "paused");
+                    $('#pause-btn').prop('disabled', data.status == "paused" && !data.started);
+                }
+
+                if (data.started != lastStarted) {
+                    lastStarted = data.started;
+                    $("#current-status-spinner").toggleClass("started", data.started);
                 }
 
                 if (data.events) {
@@ -101,50 +115,46 @@ $(function () {
 
                 if (document.title != data.title) {
                     document.title = data.title;
+                    var downPostfix = data.status == "down" ? "_down" : "";
+                    favicon.href = `${base}/static/img/favicon${downPostfix}.svg`;
                 }
             }
         });
     }, true);
 
     // Copy to clipboard
-    var clipboard = new Clipboard('button.copy-btn');
-    $("button.copy-btn").mouseout(function(e) {
-        setTimeout(function() {
-            e.target.textContent = e.target.dataset.label;
-        }, 300);
-    });
-
-    clipboard.on('success', function(e) {
-        e.trigger.textContent = "Copied!";
-        e.clearSelection();
-    });
-
-    clipboard.on('error', function(e) {
-        var text = e.trigger.getAttribute("data-clipboard-text");
-        prompt("Press Ctrl+C to select:", text)
-    });
+    $("button.copy-btn")
+        .click(function() {
+            navigator.clipboard.writeText(this.dataset.clipboardText);
+            this.textContent = "Copied!";
+        })
+        .mouseout(function(e) {
+            setTimeout(function() {
+                e.target.textContent = e.target.dataset.label;
+            }, 300);
+        });
 
     $("#events").on("click", "tr.ok", function() {
-        $("#ping-details-body").text("Updating...");
-        $('#ping-details-modal').modal("show");
-
-        $.get(this.dataset.url, function(data) {
-                $("#ping-details-body").html(data);
-            }
-        );
-
+        var n = $("td", this).first().text();
+        var tmpl = $("#log").data("url").slice(0, -2);
+        loadPingDetails(tmpl + n + "/");
         return false;
     });
 
-    var lastFormat = "local";
     function switchDateFormat(format) {
         lastFormat = format;
-        $("#log tr").each(function(index, row) {
-            var dt = moment(row.getAttribute("data-dt"));
-            format == "local" ? dt.local() : dt.tz(format);
+        var currentYear = moment().year();
 
-            $(".date", row).text(dt.format("MMM D"));
-            $(".time", row).text(dt.format("HH:mm"));
+        document.querySelectorAll("#log tr").forEach(function(row) {
+            var dt = moment.unix(row.dataset.dt).utc();
+            format == "local" ? dt.local() : dt.tz(format);
+            var dateFormat = "MMM D";
+            if (dt.year() != currentYear) {
+                dateFormat = "MMM D, YYYY";
+            }
+
+            row.children[1].textContent = dt.format(dateFormat);
+            row.children[2].textContent = dt.format("HH:mm");
         })
 
         // The table is initially hidden to avoid flickering as we convert dates.
@@ -154,10 +164,9 @@ $(function () {
 
 
     $("#format-switcher").click(function(ev) {
-        var format = ev.target.getAttribute("data-format");
+        var format = ev.target.dataset.format;
         switchDateFormat(format);
     });
-
 
     var transferFormLoadStarted = false;
     $("#transfer-btn").on("mouseenter click", function() {
@@ -167,7 +176,6 @@ $(function () {
         transferFormLoadStarted = true;
         $.get(this.dataset.url, function(data) {
             $("#transfer-modal" ).html(data);
-            $("#target-project").selectpicker();
         });
     });
 
@@ -176,5 +184,18 @@ $(function () {
     $("#transfer-modal").on("change", "#target-project", function() {
         $("#transfer-confirm").prop("disabled", !this.value);
     });
+
+
+    // Enable/disable fields in the "Filtering Rules" modal
+    $("input.filter-toggle").on("change", function() {
+        var enableInputs = $("input.filter-toggle:checked").length > 0;
+        $(".filter-kw").prop("disabled", !enableInputs);
+    });
+
+    // If the URL hash is #ping-<number>,  open the "Ping Details" dialog
+    if (document.location.hash.indexOf("#ping-") === 0) {
+        var n = parseInt(document.location.hash.substr(6));
+        loadPingDetails(`../pings/${n}/`);
+    }
 
 });

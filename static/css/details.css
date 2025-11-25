@@ -27,7 +27,7 @@
     display: block;
     padding: 8px;
     margin-bottom: 8px;
-    background: #f5f5f5;
+    background: var(--pre-bg);
 }
 
 .details-block form {
@@ -60,29 +60,22 @@
     color: #999;
 }
 
-#details-integrations th {
+.details-integrations th {
     width: 50px;
     text-align: center;
 }
 
-#details-integrations .label {
+.details-integrations .label {
     background: #777777;
 }
 
-#details-integrations .on .label {
+.details-integrations .on .label {
     background: #22bc66;
 }
 
-#details-integrations tr:hover th, #details-integrations tr:hover td {
+.details-integrations.rw tr:hover th, .details-integrations.rw tr:hover td {
     cursor: pointer;
-    background-color: #f5f5f5;
-}
-
-
-#details-remove-check {
-    border-color: #d43f3a;
-    color: #d43f3a;
-    background: #FFF;
+    background-color: var(--table-bg-hover);
 }
 
 #downtimes table {
@@ -100,10 +93,21 @@
     color: #888;
 }
 
+#downtimes .uptime {
+    display: block;
+    color: #888;
+}
+
+@media (min-width: 1199px) {
+    #downtimes .uptime {
+        float: right;
+    }
+}
+
 .alert.no-events, .alert.no-channels {
-    border: #ddd;
-    background: #F5F5F5;
-    color: #444;
+    border: var(--alert-no-data-border);
+    background: var(--alert-no-data-bg);
+    color: var(--alert-no-data-color);
     text-align: center;
     padding: 32px;
 }
@@ -127,4 +131,33 @@ ul.crosses {
 
 ul.crosses li:before {
     content: '✘ ';
+}
+
+@media (min-width: 992px) {
+    #filtering-rules-modal .modal-dialog {
+        width: 730px;
+    }
+}
+
+#filtering-rules-modal .modal-body {
+    padding: 24px;
+}
+
+#filtering-rules-modal h2 {
+    margin-top: 0;
+}
+
+
+#filtering-rules-modal hr {
+    margin: 0;
+}
+
+#current-status-indicator {
+    float: left;
+    width: 50px;
+    text-align: center;
+}
+#current-status-content {
+    margin-left: 50px;
+    padding-top: 6px;
 }

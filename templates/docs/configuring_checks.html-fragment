@@ -1,0 +1,97 @@
+<h1>Configuring Checks</h1>
+<p>In SITE_NAME, a <strong>Check</strong> represents a single service you want to
+monitor. For example, when monitoring cron jobs, you would create a separate check for
+each cron job you wish to monitor. SITE_NAME pricing plans are structured primarily
+around how many checks you can have in your account. You can create checks
+in the SITE_NAME web interface or via <a href="../api/">Management API</a>.</p>
+<h2>Name, Tags, Description</h2>
+<p>Describe each check using an optional name, slug, tags, and description fields.</p>
+<p><img alt="Editing name, tags and description" src="IMG_URL/edit_name.png" /></p>
+<ul>
+<li><strong>Name</strong>: names are optional, but setting them is a good idea.
+Good naming becomes especially important as you add more checks to the
+account. SITE_NAME will display check names in the web interface, email reports,
+and notifications.</li>
+<li><strong>Slug</strong>: URL-friendly identifier used in <a href="../http_api/#success-slug">slug-based ping URLs</a>
+(an alternative to the default UUID-based ping URLs). The slug should only contain the
+following characters: <code>a-z</code>, <code>0-9</code>, hyphens, and underscores. If you don't plan to use
+slug-based ping URLs, you can leave the slug field empty.</li>
+<li><strong>Tags</strong>: a space-separated list of optional labels. Use tags to organize and group
+checks within a project. You can tag checks by the environment
+(<code>prod</code>, <code>staging</code>, <code>dev</code>, etc.), by role (<code>www</code>, <code>db</code>, <code>worker</code>, etc.), or by using
+any other system.</li>
+<li><strong>Description</strong>: a free-form text field with any related information for your team
+or your future self. Describe the cron job's role, who set it up, what to do in
+case of failures, and where to look for additional information.</li>
+</ul>
+<h2>Simple Schedules</h2>
+<p>SITE_NAME supports three types of schedules: <strong>Simple</strong>, <strong>Cron</strong>, and <strong>OnCalendar</strong>.
+Use Simple schedules for monitoring processes that you expect to run at relatively
+regular intervals: once an hour, once a day, once a week, etc.</p>
+<p><img alt="Editing the period and grace time" src="IMG_URL/edit_simple_schedule.png" /></p>
+<p>For the simple schedules, you can configure two parameters, Period and Grace Time.</p>
+<ul>
+<li><strong>Period</strong> is the expected time between pings.</li>
+<li><strong>Grace Time</strong> is the additional time to wait before sending an alert when a check
+is late. Use this parameter to account for minor, expected deviations in job
+execution times.</li>
+</ul>
+<p>Note: if you use the "start" signal to <a href="../measuring_script_run_time/">measure job run times</a>,
+then Grace Time also specifies the maximum allowed time gap between "start" and
+"success" signals. Whenever SITE_NAME receives a "start" signal, it expects a subsequent
+"success" signal within Grace Time. If the success signal does not arrive within the
+configured Grace Time, SITE_NAME will mark the check as failed and send out alerts.</p>
+<h2>Cron Schedules</h2>
+<p>Use "Cron" for monitoring cron jobs and other processes with more complex schedules.
+This monitoring mode ensures that jobs run <strong>at the correct time</strong> and not just at
+the correct time intervals.</p>
+<p>See <a href="../cron/">Cron syntax cheatsheet</a> for cron expression syntax examples.
+See <a href="https://www.man7.org/linux/man-pages/man5/crontab.5.html">crontab(5) man page</a>
+for complete cron syntax reference.</p>
+<p><img alt="Editing cron schedule" src="IMG_URL/edit_cron_schedule.png" /></p>
+<p>You will need to specify Cron Expression, Server's Time Zone, and Grace Time.</p>
+<ul>
+<li><strong>Cron Expression</strong> is the cron expression you specified in the crontab.</li>
+<li><strong>Server's Time Zone</strong> is the timezone of your server. The cron daemon typically uses
+the system's local time. If the machine does not use the UTC timezone, specify its
+timezone here.</li>
+<li><strong>Grace Time</strong>, same as for simple schedules, is how long to wait before sending an
+alert for a late check.</li>
+</ul>
+<h2>OnCalendar Schedules</h2>
+<p>Use "OnCalendar" schedules to monitor systemd timers that use <code>OnCalendar=</code> schedules.
+Same as with systemd timers, you can specify more than one <code>OnCalendar</code> expression
+(separated with newlines, one schedule per line), and SITE_NAME will expect a ping
+whenever any schedule matches.</p>
+<p>See <a href="https://www.man7.org/linux/man-pages/man7/systemd.time.7.html#CALENDAR_EVENTS">systemd.time(7) man page</a>
+for complete OnCalendar syntax reference.</p>
+<p><img alt="Editing cron schedule" src="IMG_URL/edit_oncalendar_schedule.png" /></p>
+<h2>Filtering Rules</h2>
+<p>In the "Filtering Rules" dialog, you can control several advanced aspects of
+how SITE_NAME handles incoming pings for a particular check.</p>
+<p><img alt="Setting filtering rules" src="IMG_URL/filtering_rules.png" /></p>
+<ul>
+<li><strong>Allowed request methods for HTTP requests</strong>. You can require the ping
+requests to use HTTP POST. Use the "Only POST" option if you run into issues of
+preview bots hitting the ping URLs when you send them in email or post them in chat.</li>
+<li><strong>Filter by keywords in the Subject line</strong>. When pinging <a href="../email/">via email</a>,
+you can instruct SITE_NAME to look for specific keywords in the subject line. If the
+subject line contains any of the keywords listed in <strong>Start Keywords</strong>,
+<strong>Success Keywords</strong>, or <strong>Failure Keywords</strong>, SITE_NAME will classify the email as
+a start, a success, or a failure signal, respectively. Keyword matching is case-sensitive.
+SITE_NAME will first checks for the presence of <strong>Failure</strong> keywords, then <strong>Success</strong>
+keywords, and then <strong>Start</strong> keywords. If filtering is enabled but no keywords
+match, SITE_NAME will <strong>ignore</strong> the email message. The email will show in the event log
+with an "Ignored" badge.<br>The keyword filtering feature is useful if, for example,
+your backup  software sends an email after each backup run, but with a different subject
+line depending on success or failure.</li>
+<li><strong>Filter by keywords in the message body</strong>. Same as the previous option, but
+looks for the keywords in the email message body. SITE_NAME checks for keywords both in
+the plain text and the HTML parts of email messages.</li>
+<li><strong>Pinging a Paused Check</strong>. Normally, when you ping a paused check, it leaves the
+paused state and goes into the "up" state (or the "down" state
+in case of <a href="../signaling_failures/">a failure signal</a>).
+You can change this behavior by selecting the "Ignore the ping, stay in
+the paused state" option. With this option selected, the paused state becomes "sticky":
+SITE_NAME will ignore all incoming pings until you explicitly <em>resume</em> the check.</li>
+</ul>

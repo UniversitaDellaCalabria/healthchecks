@@ -27,12 +27,16 @@
   height: 20px;
   width: 20px;
   border-radius: 3px;
-  border: 1px solid #DDD;
+  border: 1px solid var(--input-border);
 }
 
 /* On mouse-over tint the border */
 .checkmark:hover {
     border-color: #5db4ea;
+}
+
+.checkbox-container input:focus ~ .checkmark {
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075), 0 0 0 4px rgba(102, 175, 233, 0.2);
 }
 
 /* When the checkbox is checked, add a colored background */

@@ -1,7 +1,699 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v1.16.0-dev - Unreleased
+## v3.12-dev - Unreleased
+
+### Improvements
+- Add rate limiting and a default ntfy.sh token support for ntfy notifications
+- Sort checks in daily/weekly/monthly reports by downtime duration, then by name (#1095)
+- Generate lower-case ping keys to work around broken email providers (#1218)
+- After creating a ping key show a dialog displaying the new ping key (#1222)
+- Add a tooltip with timestamp in the checks table, "Last Ping" column (#1040)
+- Update the Zulip transport to allow addressing users by User ID (#771)
+- Add hc_check_grace and hc_check_paused Prometheus metrics (#897, #915)
+
+### Bug Fixes
+- Fix cron schedule formatting in Discord notifications
+- Fix cron schedule formatting in Rocket.Chat notifications (in mobile app)
+
+## v3.11.2 - 2025-09-02
+
+### Bug Fixes
+- Update Docker image to handle legacy time zones (#1210)
+
+## v3.11.1 - 2025-08-31
+
+### Improvements
+- Update Dockerfile to use Debian Trixie as the base
+
+### Bug Fixes
+- Update Docker image to listen on IPv6 only if LISTEN_IPV6 env var is set (#1207)
+
+## v3.11 - 2025-08-28
+
+### Improvements
+- Store project API keys in the database in a hashed form (#1167)
+- Use "hcw_" and "hcr_" prefixes in project API keys (#1148)
+- New integration: Google Chat (#423)
+- Fix the ping view to handle IPv4-mapped IPv6 addresses (#1169)
+- Update Dockerfile to listen on IPv6 as well (#1177)
+- Add "ping_key+slug@..." address support when pinging by email (#1009)
+- Add daily email report option (#1202)
+
+## v3.10 - 2025-05-09
+
+### Improvements
+- Add "badge_url" field in Check API responses (#1100)
+- Add support for Signal usernames
+- Update the "Currently running, started ... ago" template to use seconds precision
+- Implement S3 outage mitigation (don't attempt GetObject calls if many recent errors)
+- Add last ping body in MS Teams Workflows notifications (#1024)
+- Update "?rid=<uuid>" handling to allow UUIDs with uppercase letters (#1116, @wie-niet)
+- New integration: GitHub issues (#671)
+- Add support for passing Authorization header to Prometheus metrics endpoints
+- Upgrade to Django 5.2
+
+### Bug Fixes
+- Fix incorrect status value in Webhook integration's $JSON placeholder
+
+## v3.9 - 2024-12-20
+
+### Improvements
+- Change the default value of ALLOWED_HOSTS from "*" to the domain part of SITE_ROOT
+
+### Bug Fixes
+- Fix fetchstatus.py (again) to handle SITE_ROOT with a path (#1108)
+
+## v3.8.2 - 2024-12-19
+
+### Improvements
+- Update notification templates to include failure reason (#1069)
+
+### Bug Fixes
+- Fix fetchstatus.py to handle SITE_ROOT with a path (#1107)
+
+## v3.8.1 - 2024-12-13
+
+### Improvements
+- Update Dockerfile to use Python 3.13.1
+- Improve Matrix notifications (include tags, period, last ping type etc.)
+
+## v3.8 - 2024-12-09
+
+### Improvements
+- Rewrite the docker/fetchstatus.py script to reduce Docker container CPU use (#1071)
+- Update Dockerfile to use Python 3.13
+- Update CustomHeaderMiddleware to normalize email addresses to lower case (#1074)
+- Add data migration to convert existing user account emails to lower case
+- Update email alerts to mention failure reason (#1069)
+- De-emphasize the unsubscribe link in email notifications
+- In the checks list, move the "Add Check" button to the top of the page
+- Implement filtering by status in the checks list page
+- Increase ntfy.sh topic max length to 64
+- Implement support for path in SITE_ROOT, e.g. SITE_ROOT=http://example.org/hc (#1091)
+
+### Bug Fixes
+- Improve recipient address validation in the smtp listener (#1077)
+
+## v3.7 - 2024-10-21
+
+### Improvements
+- Increase outgoing webhook timeout from 10 to 30 seconds
+- Remove `pruneflips` management command (now cleaned up automatically)
+- Remove `prunenotifications` management command (now cleaned up automatically)
+- Update settings.py to read SECURE_PROXY_SSL_HEADER from env vars
+- Remove LINE Notify onboarding form (as LINE Notify is shutting down on Apr 1, 2025)
+- Make slider labels clickable in the "Update Period & Grace" dialog (#1039)
+- Update the Signal integration to retry on network errors
+
+### Bug Fixes
+- Update sqlite settings to avoid "Database is locked" errors (#1057)
+- Fix API to gracefully handle too long slugs
+
+## v3.6 - 2024-09-04
+
+### Security
+- Upgrade to Django 5.1.1 (it fixes a vulnerability in `urlize` which we do use)
+
+### Improvements
+- Implement concurrent sending and `--num-workers` argument in `manage.py sendalerts`
+- Upgrade from psycopg2 to psycopg 3.x
+
+## v3.5.2 - 2024-08-21
+
+### Bug Fixes
+- Fix the Docker healthcheck script to supply correct Host header (#1051)
+
+## v3.5.1 - 2024-08-20
+
+### Bug Fixes
+- Fix the Dockerfile for building arm/v7 docker image
+
+## v3.5 - 2024-08-20
+
+Important: this Healthchecks release is using Django 5.1, which has dropped support
+for PostgreSQL 12. Therefore, the PostgreSQL image in the sample `docker-compose.yml`
+file has been updated from `postgres:12` to `postgres:16`. PostgreSQL does not
+automatically upgrade its data files between major version upgrades, you will need
+to do this manually. Instructions:
+https://github.com/healthchecks/healthchecks/tree/master/docker#upgrading-database
+
+### Improvements
+- Improve performance of loading ping body previews (#1023)
+- Implement MS Teams Workflows integration (#1024)
+- Add "uuid" field in API responses when read/write key is used (#1007)
+- Update timezone dropdowns to show frequently used timezones at the top
+- Update the "Set Password" page to reject very weak passwords
+- Implement search by slug in the checks list (#1048)
+- Add support for $SLUG placeholder in webhook payloads (#1049)
+- Update Dockerfile to use HEALTHCHECK instruction and report container health (#1045)
+
+### Bug Fixes
+- Fix Check.ping() to lock the check before updating (#1023)
+- Fix AJAX views to better handle user logging out
+
+## v3.4 - 2024-06-20
+
+### Improvements
+- Show status changes (flips) in check's log page (#447)
+- Implement dynamic favicon in the projects overview page (#971)
+- Add support for system theme (#978, @moraj-turing)
+- Improve Opsgenie notifications (include description, schedule, link etc.)
+- Update the Discord integration to disable channel on HTTP 404 responses
+- Update email notifications to include the timestamps of status flips
+- Update the Sign In page to hide "Email Link" option if SMTP is not configured (#922)
+- Update Slack integration to use channel name as the integration name (#1003)
+- Update Ping Details dialog to also show formatted datetimes (#975)
+- Add data migration to update legacy timezones to current canonical timezones
+
+### Bug Fixes
+- Fix hc.front.views.docs_search to handle words "AND", "OR", "NOT" as queries
+- Fix integrations to not disclose check's code in incident data
+- Fix integrations to include oncalendar schedules in notifications
+- Fix a bug in the log page that caused log events to sometimes load twice
+
+## v3.3 - 2024-04-03
+
+### Improvements
+- Add support for $NAME_JSON and $BODY_JSON placeholders in webhook payloads
+- Update the WhatsApp integration to use Twilio Content Templates
+- Add auto-refresh functionality to the Log page (#957, @mickBoat00)
+- Redesign the "Status Badges" page
+- Add support for per-check status badges (#853)
+- Add "Last ping subject" field in email notifications
+- Change the signup flow to accept registered users (and sign them in instead)
+- Implement event type filtering in the Log page (#873)
+- Implement dynamic favicon in the "Checks" and "Details" pages (#971, @princekhunt)
+
+### Bug Fixes
+- Fix Gotify integration to handle Gotify server URLs with paths (#964)
+- Update notification templates to handle cases where check's last ping value is null
+- Make statsd metrics collection optional (to enable, set STATSD_HOST env var)
+
+## v3.2 - 2024-02-09
+
+### Improvements
+- Update Opsgenie instructions
+- Update Spike.sh instructions
+- Add system check to validate settings.SITE_ROOT (#895)
+- Add tooltips to tag buttons in the checks list screen (#911)
+- Improve Email - Keywoard Filtering docs (@mmomjian)
+- Split the grace time input field into value/unit input group (#945, @mickBoat00)
+- Add a system check to warn about MariaDB UUID migration (#929)
+
+### Bug Fixes
+- Increase uWSGI buffer size to allow requests with large cookies (#925)
+- Fix crash when processing one-shot OnCalendar schedules
+- Fix the handling of ping bodies > 2.5MB (#931)
+- Fix crash when inviting team member but SMTP is not configured (@marlenekoh)
+
+## v3.1 - 2023-12-13
+
+### Improvements
+- Update logging configuration to write logs to database (to table `logs_record`)
+- Improve Pushover notifications (include tags, period, last ping type etc.)
+- Implement audo-submit in TOTP entry screen (#905)
+- Update the Splunk On-Call integration to disable channel on HTTP 404 responses
+- Update the Slack integration to disable channel when Slack returns 400 "invalid_token"
+- Update the Pushover integration to disable channel when Pushover reports invalid user
+- Update Twilio integrations to disable channel on "Invalid 'To' Phone Number"
+- Update the Signal integration to disable channel on UNREGISTERED_FAILURE
+- Upgrade to Django 5.0
+- Add support for systemd's OnCalendar schedules (#919)
+
+### Bug Fixes
+- Fix "Ping Details" dialog to handle email bodies not yet uploaded to object storage
+- Fix webauthn registration failure on Firefox with Bitwarden extension
+- Fix webauthn registration failure on Firefox < 119 with Ed25519 keys
+
+## v3.0.1 - 2023-10-30
+
+### Bug Fixes
+- Fix sending test notification to a group integration
+- Fix the Login form to not perform form validation in GET requests
+- Fix special character escaping in ntfy notifications
+- Fix "Edit ntfy integration" page to fill the existing token in the form
+- Fix "Delete Check" and "Update Check" API calls to handle concurrent deletes
+- Fix Signal transport to handle JSON-RPC messages with no ids
+- Fix DST handling in Check.get_grace_start()
+
+## v3.0 - 2023-10-16
+
+This release drops support of Python 3.9 and below. The minimum required Python
+version is 3.10.
+
+### Improvements
+- Add Channel.last_notify_duration field, use it in "sendalerts" for prioritization
+- Update Telegram integration to treat "bot was blocked by the user" as permanent error
+- Add "Time Zone" field in notifications that use the "Schedule" field (#863)
+- Add bold and monospace text formatting in Signal notifications
+- Update hourly/daily email reminders to only show checks in the "down" state (#881)
+- Add support for ntfy access tokens (#879)
+- Improve ntfy notifications (include tags, period, last ping type etc.)
+- Add an "Account closed." confirmation message after closing an account
+- Add monthly uptime percentage display in Check Details page (#773)
+- Increase the precision of calculated downtime duration in check's details and reports
+- Increase bottom margin for modal windows to work around Mobile Safari issue (#899)
+- New integration: notification group (#894)
+
+### Bug Fixes
+- Fix "senddeletionnotices" to recognize "Supporter" subscriptions
+- Fix "createsuperuser" to reject already registered email addresses (#880)
+- Fix hc.accounts.views.check_token to handle non-UUID usernames (#882)
+- Fix time interval formatting in Check Details page, downtime summary table
+- Fix HTML escaping issue in Project admin
+
+## v2.10 - 2023-07-02
+
+### Improvements
+- Configure logging to log unhandled exceptions to console even when DEBUG=False (#835)
+- Make hc.lib.emails raise exceptions when EMAIL_ settings are not set
+- Decouple check's name from slug, allow users to set hand-picked slugs
+- Add /api/v3/ (adds ability to specify slug when creating or updating checks)
+- Update Dockerfile to use Debian Bookworm as the base
+- Implement optional check auto-provisioning when pinging by slug (#626)
+- Add support for the $EXITSTATUS placeholder in webhook payloads (#826)
+- Add API support for filtering checks by slug (#844)
+- Add support for Telegram topics (#852)
+- For cron checks, switch to using check's (not browser's) timezone to format dates
+- Upgrade to cronsim 2.5 (adds support for "LW" in the day-of-month field)
+
+### Bug Fixes
+- Fix DB connection timeouts in `manage.py smtpd` (#847)
+
+## v2.9.2 - 2023-06-05
+
+### Bug Fixes
+- Fix a crash in `manage.py smtpd` when stdin is not attached (#840)
+
+## v2.9.1 - 2023-06-05
+
+### Bug Fixes
+- Fix the GHA workflow for building arm/v7 docker image
+
+## v2.9 - 2023-06-05
+
+### Improvements
+- Switch from CssAbsoluteFilter to CssRelativeFilter (#822)
+- Add statsd metric collection in hc.lib.s3.get_object()
+- Upgrade to cronsim 2.4
+- Update Signal notification template to include more data
+- Add Profile.deletion_scheduled_deleted field, and UI banner when it's set
+- Add support for specifying MessagingServiceSid when sending SMS and WA messages
+- Update the smtpd management command to use the aiosmtpd library
+- Add Rocket.Chat integration (#463)
+
+### Bug Fixes
+- Fix a race condition when pinging and deleting checks at the same time
+- Fix the checks list to preserve filters when changing sort order (#828)
+
+## v2.8.1 - 2023-04-11
+
+### Bug Fixes
+- Fix django-compressor warning with github_actions.html
+
+## v2.8 - 2023-04-11
+
+### Improvements
+- Add GitHub Actions examples
+- Update the Dockerfile to use Python 3.11
+- Update the Ping Details dialog to show the "HTML" tab by default (#801)
+- Add a "Switch Project" menu in top navigation
+- Update Trello onboarding form to allow longer Trello auth tokens (#806)
+- Remove L10N markup from base.html, and associated translations
+- Add Arduino usage example
+- Upgrade to Django 4.2
+- Add email fallback for Signal notifications that hit rate limit
+- Make warnings about no backup second factor more assertive
+- Add cron expression tester and sample expressions in the cron cheatsheet page
+
+### Bug Fixes
+- Fix notification query in the Log page
+
+## v2.7 - 2023-03-06
+
+### Improvements
+- Add last ping body in Mattermost notifications (#785)
+- Improve the error message about rejected private IPs
+- Update Docker image's uwsgi.ini to use SMTPD_PORT env var (#791)
+- Update Telegram notification template to include more data
+- Add CSRF protection in the signup view
+
+### Bug Fixes
+- Fix URL validation to allow hostnames with no TLD ("http://example") (#782)
+- Add handling for ProtocolError exceptions in hc.lib.s3.get_object
+- Fix a race condition in Check.ping method
+- Fix the SameSite and Secure attributes on the "auto-login" cookie
+- Fix the "Test" button in the Integrations screen for read-only users
+- Add form double submit protection when registering a WebAuthn key
+
+## v2.6.1 - 2023-01-26
+
+### Improvements
+- Improve Prometheus docs, add section "Available Metrics"
+
+### Bug Fixes
+- Fix a crash in the "createsuperuser" management command (#779)
+
+## v2.6 - 2023-01-23
+
+### Improvements
+- Improve layout in "My Checks" for checks with long ping URLs (#745)
+- Add support for communicating with signal-cli over TCP (#732)
+- Add /api/v2/ (changes the status reporting of checks in started state) (#633)
+- Update settings.py to read the ADMINS setting from an environment variable
+- Add "Start Keyword" filtering for inbound emails (#716)
+- Add rate limiting by client IP in the signup and login views
+
+### Bug Fixes
+- Fix the Signal integration to handle unexpected RPC messages better (#763)
+- Fix special character encoding in Signal notifications (#767)
+- Fix project sort order to be case-insensitive everywhere in the UI (#768)
+- Fix special character encoding in project invite emails
+- Fix check transfer between same account's projects when at check limit
+- Fix wording in the invite email when inviting read-only users
+- Fix login and signup views to make email enumeration harder
+
+## v2.5 - 2022-12-14
+
+### Improvements
+- Upgrade to fido2 1.1.0 and simplify hc.lib.webauthn
+- Add handling for ipv4address:port values in the X-Forwarded-For header (#714)
+- Add a form for submitting Signal CAPTCHA solutions
+- Add Duration field in the Ping Details dialog (#720)
+- Update Mattermost setup instructions
+- Add support for specifying a run ID via a "rid" query parameter (#722)
+- Add last ping body in Slack notifications (#735)
+- Add ntfy integration (#728)
+- Add ".txt" suffix to the filename when downloading ping body (#738)
+- Add API support for fetching ping bodies (#737)
+- Change "Settings - Email Reports" page to allow manual timezone selection
+
+### Bug Fixes
+- Fix the most recent ping lookup in the "Ping Details" dialog
+- Fix binary data handling in the hc.front.views.ping_body view
+- Fix downtime summaries in weekly reports (#736)
+- Fix week, month boundary calculation to use user's timezone
+
+## v2.4.1 - 2022-10-18
+
+### Bug Fixes
+- Fix the GHA workflow for building arm/v7 docker image
+
+## v2.4 - 2022-10-18
+
+### Improvements
+- Add support for EMAIL_USE_SSL environment variable (#685)
+- Switch from requests to pycurl
+- Implement documentation search
+- Add date filters in the Log page
+- Upgrade to cronsim 2.3
+- Add support for the $BODY placeholder in webhook payloads (#708)
+- Implement the "Clear Events" function
+- Add support for custom topics in Zulip notifications (#583)
+
+### Bug Fixes
+- Fix the handling of TooManyRedirects exceptions
+- Fix MySQL 8 support in the Docker image (upgrade from buster to bullseye) (#717)
+
+## v2.3 - 2022-08-05
+
+### Improvements
+- Update Dockerfile to start SMTP listener (#668)
+- Implement the "Add Check" dialog
+- Include last ping type in Slack, Mattermost, Discord notifications
+- Upgrade to cron-descriptor 1.2.30
+- Add "Filter by keywords in the message body" feature (#653)
+- Upgrade to HiDPI screenshots in the documentation
+- Add support for the $JSON placeholder in webhook payloads
+- Add ping endpoints for "log" events
+- Add the "Badges" page in docs
+- Add support for multiple recipients in incoming email (#669)
+- Upgrade to fido2 1.0.0, requests 2.28.1, segno 1.5.2
+- Implement auto-refresh and running indicator in the My Projects page (#681)
+- Upgrade to Django 4.1 and django-compressor 4.1
+- Add API support for resuming paused checks (#687)
+
+### Bug Fixes
+- Fix the display of ignored pings with non-zero exit status
+- Fix a race condition in the "Change Email" flow
+- Fix grouping and sorting in the text version of the report/nag emails (#679)
+- Fix the update_timeout and pause views to create flips (for downtime bookkeeping)
+- Fix the checks list to preserve selected filters when adding/updating checks (#684)
+- Fix duration calculation to skip "log" and "ign" events
+
+## v2.2.1 - 2022-06-13
+
+### Improvements
+- Improve the text version of the alert email template
+
+### Bug Fixes
+- Fix the version number displayed in the footer
+
+## v2.2 - 2022-06-13
+
+### Improvements
+- Add address verification step in the "Change Email" flow
+- Reduce logging output from sendalerts and sendreports management commands (#656)
+- Add Ctrl+C handler in sendalerts and sendreports management commands
+- Add notes in docs about configuring uWSGI via UWSGI_ env vars (#656)
+- Implement login link expiration (login links will now expire in 1 hour)
+- Add Gotify integration (#270)
+- Add API support for reading/writing the subject and subject_fail fields (#659)
+- Add "Disabled" priority for Pushover notifications (#663)
+
+### Bug Fixes
+- Update hc.front.views.channels to handle empty strings in settings (#635)
+- Add logic to handle ContentDecodingError exceptions
+
+## v2.1 - 2022-05-10
+
+### Improvements
+- Add logic to alert ADMINS when Signal transport hits a CAPTCHA challenge
+- Implement the "started" progress spinner in the details pages
+- Add "hc_check_started" metric in the Prometheus metrics endpoint (#630)
+- Add a management command for submitting Signal rate limit challenges
+- Upgrade to django-compressor 4.0
+- Update the C# snippet
+- Increase max displayed duration from 24h to 72h (#644)
+- Add "Ping-Body-Limit" response header in ping API responses
+
+### Bug Fixes
+- Fix unwanted localization in badge SVG generation (#629)
+- Update email template to handle not yet uploaded ping bodies
+- Add small delay in transports.Email.notify to allow ping body to upload
+- Fix prunenotifications to handle checks with missing pings (#636)
+- Fix "Send Test Notification" for integrations that only send "up" notifications
+
+## v2.0.1 - 2022-03-18
+
+### Bug Fixes
+- Fix the GHA workflow for building arm/v7 docker image
+
+## v2.0 - 2022-03-18
+
+This release contains a backwards-incompatible change to the Signal integration
+(hence the major version number bump). Healthchecks uses signal-cli to deliver
+Signal notifications. In the past versions, Healthchecks interfaced with
+signal-cli over DBus. Starting from this version, Healthchecks interfaces
+with signal-cli using JSON RPC. Please see README for details on how to set
+this up.
+
+### Improvements
+- Update Telegram integration to treat "group chat was deleted" as permanent error
+- Update email bounce handler to mark email channels as disabled (#446)
+- Update Signal integration to use JSON RPC over UNIX socket
+- Update the "Add TOTP" form to display plaintext TOTP secret (#602)
+- Improve PagerDuty notifications
+- Add Ping.body_raw field for storing body as bytes
+- Add support for storing ping bodies in S3-compatible object storage (#609)
+- Add a "Download Original" link in the "Ping Details" dialog
+
+### Bug Fixes
+- Fix unwanted special character escaping in notification messages (#606)
+- Fix JS error after copying a code snippet
+- Make email non-editable in the "Invite Member" dialog when team limit reached
+- Fix Telegram bot to handle TransportError exceptions
+- Fix Signal integration to handle UNREGISTERED_FAILURE errors
+- Fix unwanted localization of period and grace values in data- attributes (#617)
+- Fix Mattermost integration to treat 404 as a transient error (#613)
+
+## v1.25.0 - 2022-01-07
+
+### Improvements
+- Implement Pushover emergency alert cancellation when check goes up
+- Add "The following checks are also down" section in Telegram notifications
+- Add "The following checks are also down" section in Signal notifications
+- Upgrade to django-compressor 3.0
+- Add support for Telegram channels (#592)
+- Implement Telegram group to supergroup migration (#132)
+- Update the Slack integration to not retry when Slack returns 404
+- Refactor transport classes to raise exceptions on delivery problems
+- Add Channel.disabled field, for disabling integrations on permanent errors
+- Upgrade to Django 4
+- Bump the min. Python version from 3.6 to 3.8 (as required by Django 4)
+
+### Bug Fixes
+- Fix report templates to not show the "started" status (show UP or DOWN instead)
+- Update Dockerfile to avoid running "pip wheel" more than once (#594)
+
+## v1.24.1 - 2021-11-10
+
+### Bug Fixes
+- Fix Dockerfile for arm/v7 - install all dependencies from piwheels
+
+## v1.24.0 - 2021-11-10
+
+### Improvements
+- Switch from croniter to cronsim
+- Change outgoing webhook timeout to 10s, but cap the total time to 20s
+- Implement automatic `api_ping` and `api_notification` pruning (#556)
+- Update Dockerfile to install apprise (#581)
+- Improve period and grace controls, allow up to 365 day periods (#281)
+- Add SIGTERM handling in sendalerts and sendreports
+- Remove the "welcome" landing page, direct users to the sign in form instead
+
+### Bug Fixes
+- Fix hc.api.views.ping to handle non-utf8 data in request body (#574)
+- Fix a crash when hc.api.views.pause receives a single integer in request body
+
+## v1.23.1 - 2021-10-13
+
+### Bug Fixes
+- Fix missing uwsgi dependencies in arm/v7 Docker image
+
+## v1.23.0 - 2021-10-13
+
+### Improvements
+- Add /api/v1/badges/ endpoint (#552)
+- Add ability to edit existing email, Signal, SMS, WhatsApp integrations
+- Add new ping URL format: /{ping_key}/{slug} (#491)
+- Reduce Docker image size by using slim base image and multi-stage Dockerfile
+- Upgrade to Bootstrap 3.4.1
+- Upgrade to jQuery 3.6.0
+
+### Bug Fixes
+- Add handling for non-latin-1 characters in webhook headers
+- Fix dark mode bug in selectpicker widgets
+- Fix a crash during login when user's profile does not exist (#77)
+- Drop API support for GET, DELETE requests with a request body
+- Add missing @csrf_exempt annotations in API views
+- Fix the ping handler to reject status codes > 255
+- Add 'schemaVersion' field in the shields.io endpoint (#566)
+
+## v1.22.0 - 2021-08-06
+
+### Improvements
+- Use multicolor channel icons for better appearance in the dark mode
+- Add SITE_LOGO_URL setting (#323)
+- Add admin action to log in as any user
+- Add a "Manager" role (#484)
+- Add support for 2FA using TOTP (#354)
+- Add Whitenoise (#548)
+
+### Bug Fixes
+- Fix dark mode styling issues in Cron Syntax Cheatsheet
+- Fix a 403 when transferring a project to a read-only team member
+- Security: fix allow_redirect function to reject absolute URLs
+
+## v1.21.0 - 2021-07-02
+
+### Improvements
+- Increase "Success / Failure Keywords" field lengths to 200
+- Django 3.2.4
+- Improve the handling of unknown email addresses in the Sign In form
+- Add support for "... is UP" SMS notifications
+- Add an option for weekly reports (in addition to monthly)
+- Implement PagerDuty Simple Install Flow, remove PD Connect
+- Implement dark mode
+
+### Bug Fixes
+- Fix off-by-one-month error in monthly reports, downtime columns (#539)
+
+## v1.20.0 - 2021-04-22
+
+### Improvements
+- Django 3.2
+- Rename VictorOps -> Splunk On-Call
+- Implement email body decoding in the "Ping Details" dialog
+- Add a "Subject" field in the "Ping Details" dialog
+- Improve HTML email display in the "Ping Details" dialog
+- Add a link to check's details page in Slack notifications
+- Replace details_url with cloaked_url in email and chat notifications
+- In the "My Projects" page, show projects with failing checks first
+
+### Bug Fixes
+- Fix downtime summary to handle months when the check didn't exist yet (#472)
+- Relax cron expression validation: accept all expressions that croniter accepts
+- Fix sendalerts to clear Profile.next_nag_date if all checks up
+- Fix the pause action to clear Profile.next_nag_date if all checks up
+- Fix the "Email Reports" screen to clear Profile.next_nag_date if all checks up
+- Fix the month boundary calculation in monthly reports (#497)
+
+## v1.19.0 - 2021-02-03
+
+### Improvements
+- Add tighter parameter checks in hc.front.views.serve_doc
+- Update OpsGenie instructions (#450)
+- Update the email notification template to include more check and last ping details
+- Improve the crontab snippet in the "Check Details" page (#465)
+- Add Signal integration (#428)
+- Change Zulip onboarding, ask for the zuliprc file (#202)
+- Add a section in Docs about running self-hosted instances
+- Add experimental Dockerfile and docker-compose.yml
+- Add rate limiting for Pushover notifications (6 notifications / user / minute)
+- Add support for disabling specific integration types (#471)
+
+### Bug Fixes
+- Fix unwanted HTML escaping in SMS and WhatsApp notifications
+- Fix a crash when adding an integration for an empty Trello account
+- Change icon CSS class prefix to 'ic-' to work around Fanboy's filter list
+
+## v1.18.0 - 2020-12-09
+
+### Improvements
+- Add a tooltip to the 'confirmation link' label (#436)
+- Update API to allow specifying channels by names (#440)
+- When saving a phone number, remove any invisible unicode characters
+- Update the read-only dashboard's CSS for better mobile support (#442)
+- Reduce the number of SQL queries used in the "Get Checks" API call
+- Add support for script's exit status in ping URLs (#429)
+- Improve phone number sanitization: remove spaces and hyphens
+- Change the "Test Integration" behavior for webhooks: don't retry failed requests
+- Add retries to the the email sending logic
+- Require confirmation codes (sent to email) before sensitive actions
+- Implement WebAuthn two-factor authentication
+- Implement badge mode (up/down vs up/late/down) selector (#282)
+- Add Ping.exitstatus field, store client's reported exit status values (#455)
+- Implement header-based authentication (#457)
+- Add a "Lost password?" link with instructions in the Sign In page
+
+### Bug Fixes
+- Fix db field overflow when copying a check with a long name
+
+## v1.17.0 - 2020-10-14
+
+### Improvements
+- Django 3.1
+- Handle status callbacks from Twilio, show delivery failures in Integrations
+- Removing unused /api/v1/notifications/{uuid}/bounce endpoint
+- Less verbose output in the `senddeletionnotices` command
+- Host a read-only dashboard (from github.com/healthchecks/dashboard/)
+- LINE Notify integration (#412)
+- Read-only team members
+- API support for setting the allowed HTTP methods for making ping requests
+
+### Bug Fixes
+- Handle excessively long email addresses in the signup form
+- Handle excessively long email addresses in the team member invite form
+- Don't allow duplicate team memberships
+- When copying a check, copy all fields from the "Filtering Rules" dialog (#417)
+- Fix missing Resume button (#421)
+- When decoding inbound emails, decode encoded headers (#420)
+- Escape markdown in MS Teams notifications (#426)
+- Set the "title" and "summary" fields in MS Teams notifications (#435)
+
+## v1.16.0 - 2020-08-04
 
 ### Improvements
 - Paused ping handling can be controlled via API (#376)
@@ -13,6 +705,9 @@ All notable changes to this project will be documented in this file.
 - Added "Docs > Reliability Tips" page
 - Spike.sh integration (#402)
 - Updated Discord integration to use discord.com instead of discordapp.com
+- Add "Failure Keyword" filtering for inbound emails (#396)
+- Add support for multiple, comma-separated keywords (#396)
+- New integration: phone calls (#403)
 
 ### Bug Fixes
 - Removing Pager Team integration, project appears to be discontinued

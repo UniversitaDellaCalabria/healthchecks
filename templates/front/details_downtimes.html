@@ -1,12 +1,15 @@
-{% load hc_extras %}
-<table class="table">
-    {% for boundary, seconds, count in downtimes reversed %}
+{% load hc_extras tz %}
+{% timezone tz %}
+<table id="downtimes" class="table">
+    {% for d in downtimes %}
     <tr>
-        <th>{{ boundary|date:"N Y"}}</th>
+        <th>{{ d.boundary|date:"N Y"}}</th>
         <td>
-            {% if count %}
-                {{ count }} downtime{{ count|pluralize }},
-                {{ seconds|hc_approx_duration }} total
+            {% if d.no_data %}
+                –
+            {% elif d.count %}
+                {{ d.count }} downtime{{ d.count|pluralize }}, {{ d.duration|hc_approx_duration }} total
+                <span class="uptime">{{ d.monthly_uptime|pct }}% uptime</span>
             {% else %}
                 All good!
             {% endif %}
@@ -14,3 +17,4 @@
     </tr>
     {% endfor %}
 </table>
+{% endtimezone %}

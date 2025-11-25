@@ -1,36 +1,34 @@
-from django.db.models import F
-from django.contrib.auth.models import User
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from django.conf import settings
 from django.core.management.base import BaseCommand
-from hc.accounts.models import Profile
-from hc.api.models import Check, Ping
+
+from hc.api.models import Check
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = """Prune pings based on limits in user profiles.
+    help = "Sequentially prune all checks in the database."
 
-    This command prunes each check individually. So it does the work
-    in small chunks instead of a few big SQL queries like the `prunepings`
-    command. It is appropriate for initial pruning of the potentially
-    huge api_ping table.
+    def handle(self, **options: Any) -> str:
+        # Delete operations are sometimes slow, increase timeout
+        settings.S3_TIMEOUT = 60
 
-    """
+        for check in Check.objects.filter(n_pings__gt=100).order_by("code"):
+            # Pruning of all checks is a potentially long operations, and some
+            # checks may get removed while the operation is running.
+            # To reduce the chance of hitting DoesNotExist exceptions,
+            # before pruning each check make sure it still exists:
+            if not Check.objects.filter(id=check.id).exists():
+                continue
 
-    def handle(self, *args, **options):
-        # Create any missing user profiles
-        for user in User.objects.filter(profile=None):
-            Profile.objects.get_or_create(user_id=user.id)
-
-        checks = Check.objects
-        checks = checks.annotate(limit=F("project__owner__profile__ping_log_limit"))
-
-        for check in checks:
-            q = Ping.objects.filter(owner_id=check.id)
-            q = q.filter(n__lte=check.n_pings - check.limit)
-            q = q.filter(n__gt=0)
-            n_pruned, _ = q.delete()
-
-            self.stdout.write(
-                "Pruned %d pings for check %s (%s)" % (n_pruned, check.id, check.name)
-            )
-
+            print(f"Pruning: {check.code}")
+            try:
+                check.prune(wait=True)
+            except Exception:
+                logger.exception("Exception in Check.prune()")
         return "Done!"

@@ -1,7 +1,15 @@
+.page-docs-cron h1 {
+    font-size: 24px;
+    font-weight: bold;
+}
 
+.page-docs-cron h2 {
+    margin-top: 40px;
+    font-weight: bold;
+}
 
 .cron-example th {
-    background: #f5f5f5;
+    background: var(--cheatsheet-example-bg);
 }
 
 .cron-example th div {
@@ -24,8 +32,8 @@
     bottom: 15px;
     width: 40%;
 
-    border-left: 2px dotted #ddd;
-    border-bottom: 2px dotted #ddd;
+    border-left: 2px dotted var(--cheatsheet-dotted-color);
+    border-bottom: 2px dotted var(--cheatsheet-dotted-color);
 }
 
 .desc {
@@ -33,7 +41,7 @@
     font-weight: bold;
     font-style: italic;
     font-size: 20px;
-    color: #333;
+    color: var(--text-color);
     padding: 8px;
     margin-bottom: 8px;
 }
@@ -50,5 +58,25 @@
 }
 
 .cron-example td.minor {
-    color: #999;
+    color: var(--text-muted);
+}
+
+.page-docs-cron #test-area {
+    max-width: 920px;
+}
+
+.page-docs-cron #cron-preview {
+    margin-top: 20px;
+}
+
+#common-cron-expressions td {
+    vertical-align: middle;
+}
+
+#common-cron-expressions td:nth-child(2) {
+    font-family: monospace;
+}
+
+#common-cron-expressions td:last-child {
+    text-align: right;
 }

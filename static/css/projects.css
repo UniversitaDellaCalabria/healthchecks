@@ -1,17 +1,18 @@
 #project-selector a {
-    color: #333;
+    color: var(--text-color);
 }
 
 #project-selector a:hover {
     text-decoration: none;
 }
 
-#project-selector a:hover .project {
-    border-color: #0091EA;
+#project-selector a:hover .project,
+#project-selector .project.selected {
+    border-color: var(--link-color);
 }
 
 #project-selector .project {
-    border-color: #ddd;
+    border-color: var(--border-color);
     padding: 24px 24px 24px 64px;
     position: relative;
     min-height: 120px;
@@ -25,15 +26,6 @@
     text-overflow: ellipsis;
 }
 
-#project-selector .project.selected {
-    border-color: #0091EA;
-}
-
-#project-selector .project .status {
-    position: absolute;
-    left: 24px;
-}
-
 #project-selector #add-project .project {
     border-style: dashed;
     padding: 0;
@@ -45,7 +37,12 @@
 }
 
 #project-selector #add-project:hover .project {
-    border-color: #0091EA;
-    color: #333;
+    border-color: var(--link-color);
+    color: var(--text-color);
 }
 
+.indicators {
+    position: absolute;
+    left: 24px;
+    width:  24px;
+}

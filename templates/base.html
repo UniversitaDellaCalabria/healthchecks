@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>{% block title %}{% site_name %} - Monitor Cron Jobs. Get Notified When Your Cron Jobs Fail{% endblock %}</title>
+    <title>{% block title %}{{ site_name }} - Monitor Cron Jobs. Get Notified When Your Cron Jobs Fail{% endblock %}</title>
     {% block description %}
     <meta name="description" content="Monitor and Get Notified When Your Cron Jobs Fail. Free alternative to Cronitor and Dead Man's Snitch.">
     {% endblock %}
@@ -11,50 +11,68 @@
     <meta name="keywords" content="healthchecks, monitor cron jobs, cron monitoring, cron job syntax, health checks, crontab cheat sheet, crontab monitoring, cronjob monitoring, cron dashboard">
     {% endblock %}
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="apple-mobile-web-app-title" content="{% site_name %}">
-    <meta name="application-name" content="{% site_name %}">
-    <link rel="icon" type="image/x-icon" href="{% static 'img/favicon.ico' %}">
+    <meta name="apple-mobile-web-app-title" content="{{ site_name }}">
+    <meta name="application-name" content="{{ site_name }}">
+    {% block favicon %}
+    <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
+    {% endblock %}
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'img/apple-touch-180.png' %}">
     {% block head %}{% endblock %}
     {% compress css %}
     <link rel="stylesheet" href="{% static 'css/bootstrap.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/bootstrap-select.min.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/selectize.hc.css' %}" type="text/css">
 
-    <link rel="stylesheet" href="{% static 'css/add_project_modal.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/add_pushover.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/webhook_form.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/variables.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/bootstrap-colors.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/base.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/billing.css' %}" type="text/css">
+
+    <link rel="stylesheet" href="{% static 'css/add_credential.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/add_project_modal.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/appearance.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/webhook_form.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/badges.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/channel_checks.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/channels.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/checkbox.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/details.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/docs.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/docs_cron.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/group_form.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/icomoon.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/log.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/login.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/my_checks.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/my_checks_desktop.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/checks.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/update_timeout_modal.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/checks_table.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/nouislider.min.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/nouislider.pips.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/nouislider.hc.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/nouislider.dark.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/ping_details.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/pricing.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/profile.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/projects.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/radio.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/search.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/settings.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/snippet-copy.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/syntax.css' %}" type="text/css">
-    <link rel="stylesheet" href="{% static 'css/welcome.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/set_password.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/signal_form.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/project.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/signup.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/slug-suggestions.css' %}" type="text/css">
     {% endcompress %}
 </head>
-<body class="page-{{ page }}">
+<body class="page-{{ page }}{% if request.user.is_authenticated and request.profile.theme == 'dark' %} dark{% endif%}">
     {% debug_warning %}
+    {% if request.user.is_authenticated and request.profile.deletion_scheduled_date %}
+    <div id="account-warning">
+        Warning: Your account is scheduled for deletion on {{ request.profile.deletion_scheduled_date.date }}.
+        <a href="mailto:{% support_email %}">Contact support</a> to resolve.
+    </div>
+    {% endif %}
+
     <nav class="navbar navbar-default">
-        <div class="container{% if page == "checks" or page == "details" %}-fluid{% endif %}">
+        <div class="container{% if page == 'checks' or page == 'details' or page == 'log' %}-fluid{% endif %}">
         <div class="navbar-header">
             <button
                 type="button"
@@ -69,19 +87,25 @@
                 <span class="icon-bar"></span>
             </button>
 
-            <a id="base-url" class="navbar-brand" href="{% url 'hc-index' %}">
             {% if request.user.is_authenticated and project %}
-                {{ project }}
-                <span class="caret"></span>
-            {% elif request.user.is_authenticated %}
-                <img
-                    id="logo"
-                    height="50"
-                    width="59"
-                    src="{% static 'img/logo.svg'%}"
-                    srcset="{% static 'img/logo.svg'%} 1x, {% static 'img/logo@2x.svg'%} 2x"
-                    alt="{% site_name %}">
+            <div id="project-menu" class="navbar-brand">
+                <div class="dropdown">
+                    <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button">
+                        {{ project }}
+                        <span class="caret"></span>
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a id="base-url" href="{% url 'hc-index' %}">All Projects</a></li>
+                        <li id="projects-divider" role="separator" class="divider"></li>
+                        <li role="separator" class="divider"></li>
+                        <li>
+                            <a  href="#" data-toggle="modal"  data-target="#add-project-modal">New Project&hellip;</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
             {% else %}
+            <a id="base-url" class="navbar-brand" href="{% url 'hc-index' %}">
                 <img
                     id="logo"
                     height="50"
@@ -89,32 +113,32 @@
                     src="{% static 'img/logo_full.svg'%}"
                     srcset="{% static 'img/logo_full.svg'%} 1x, {% static 'img/logo-full@2x.svg'%} 2x"
                     alt="{% site_name %}">
-            {% endif %}
             </a>
+            {% endif %}
         </div>
         <div id="navbar" class="navbar-collapse collapse">
             {% if project %}
             <ul id="nav-main-sections" class="nav navbar-nav">
-                    <li {% if page == 'checks' %} class="active" {% endif %}>
-                        <a href="{% url 'hc-checks' project.code %}">Checks</a>
-                    </li>
+                <li {% if page == 'checks' %} class="active" {% endif %}>
+                    <a href="{% url 'hc-checks' project.code %}">Checks</a>
+                </li>
 
-                    {% with b=project.have_channel_issues %}
-                    <li {% if b %}id="broken-channels"{% endif %} {% if page == 'channels' %}class="active"{% endif %}>
-                        <a href="{% url 'hc-p-channels' project.code %}">
-                            Integrations
-                            {% if b %}<span class="icon-grace"></span>{% endif %}
-                        </a>
-                    </li>
-                    {% endwith %}
+                {% with b=project.have_channel_issues %}
+                <li {% if b %}id="broken-channels"{% endif %} {% if page == 'channels' %}class="active"{% endif %}>
+                    <a href="{% url 'hc-channels' project.code %}">
+                        Integrations
+                        {% if b %}<span class="ic-grace"></span>{% endif %}
+                    </a>
+                </li>
+                {% endwith %}
 
-                    <li {% if page == 'badges' %} class="active" {% endif %}>
-                        <a href="{% url 'hc-badges' project.code %}">Badges</a>
-                    </li>
+                <li {% if page == 'badges' %} class="active" {% endif %}>
+                    <a href="{% url 'hc-badges' project.code %}">Badges</a>
+                </li>
 
-                    <li {% if page == 'project' %} class="active" {% endif %}>
-                        <a href="{% url 'hc-project-settings' project.code %}">Settings</a>
-                    </li>
+                <li {% if page == 'project' %} class="active" {% endif %}>
+                    <a href="{% url 'hc-project-settings' project.code %}">Settings</a>
+                </li>
             </ul>
             {% endif %}
 
@@ -145,25 +169,17 @@
                             <li role="separator" class="divider"></li>
                         {% endif %}
 
-                        <li class="dropdown-header">Projects</li>
-                        {% for project in request.profile.annotated_projects %}
-                        <li class="project-item">
-                            <a href="{% url 'hc-checks' project.code %}">
-                                <span class="name">{{ project }}</span>
-                                {% if project.n_down %}
-                                <span class="badge badge-down pull-right">
-                                    {{ project.n_down }}
-                                </span>
-                                {% endif %}
-                            </a>
-                        </li>
-                        {% endfor %}
-
-                    <li role="separator" class="divider"></li>
                     <li class="dropdown-header">{{ request.user.email }}</li>
 
-                    <li><a href="{% url 'hc-profile' %}">Account Settings</a></li>
-                    <li><a href="{% url 'hc-logout' %}">Log Out</a></li>
+                    <li>
+                        <a href="{% url 'hc-profile' %}">Account Settings</a>
+                    </li>
+                    <li>
+                        <form method="post" action="{% url 'hc-logout' %}">
+                            {% csrf_token %}
+                            <button class="btn btn-link" type="submit">Log Out</button>
+                        </form>
+                    </li>
                     </ul>
                 </li>
                 {% elif page != "login" %}
@@ -187,29 +203,45 @@
     </nav>
 
     {% block containers %}
-    <div class="container{% if page == "checks" or page == "details" %}-fluid{% endif %}">
+    <div class="container{% if page == 'checks' or page == 'details' or page == 'log' %}-fluid{% endif %}">
         {% block content %}{% endblock %}
     </div>
     {% endblock %}
 
     <footer class="footer">
-        <div class="container{% if page == "checks" or page == "details" %}-fluid{% endif %}">
+        <div class="container{% if page == 'checks' or page == 'details' or page == 'log' %}-fluid{% endif %}">
             <ul>
                 <li>
-                    Powered by Healthchecks open-source project
+                    Healthchecks {% site_version %}
                     (<a href="https://github.com/healthchecks/healthchecks">github</a>,
                      <a href="https://healthchecks.io">healthchecks.io</a>)
                 </li>
             </ul>
         </div>
     </footer>
+    
+    {% block base_modals %}{% endblock %}
 
+    {% if request.user.is_authenticated and request.profile.theme == 'system' %}
+    <script>
+        (function() {
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+            function switchColors() {
+                document.body.classList.toggle("dark", prefersDark.matches);
+            }
+            switchColors();
+            prefersDark.addEventListener("change", switchColors);
+        })();
+    </script>
+    {% endif %}
 
-    {% block scripts %}
+    {% block base_scripts %}
     {% compress js %}
-    <script src="{% static 'js/jquery-2.1.4.min.js' %}"></script>
+    <script src="{% static 'js/jquery-3.6.0.min.js' %}"></script>
     <script src="{% static 'js/bootstrap.min.js' %}"></script>
     {% endcompress %}
     {% endblock %}
+
+    {% block scripts %}{% endblock %}
 </body>
 </html>

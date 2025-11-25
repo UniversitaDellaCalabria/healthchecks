@@ -1,21 +1,39 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import date
+from datetime import timedelta as td
+from typing import TypedDict
+from uuid import UUID
+
 from django.contrib import admin
+from django.contrib.admin import ModelAdmin
 from django.core.paginator import Paginator
-from django.db import connection
-from django.db.models import Count, F
+from django.db.models import F, QuerySet
+from django.http import HttpRequest
 from django.urls import reverse
-from django.utils.html import escape
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django_stubs_ext import WithAnnotations
 from hc.api.models import Channel, Check, Flip, Notification, Ping
 from hc.lib.date import format_duration
 
+Lookups = Iterable[tuple[str, str]]
+
+
+class CheckAnnotations(TypedDict):
+    owner_email: str
+
 
 @admin.register(Check)
-class ChecksAdmin(admin.ModelAdmin):
+class ChecksAdmin(ModelAdmin[Check]):
     class Media:
         css = {"all": ("css/admin/checks.css",)}
 
     search_fields = ["name", "code", "project__owner__email"]
+    readonly_fields = ("code", "badge_key")
     raw_id_fields = ("project",)
+    list_select_related = ("project",)
     list_display = (
         "id",
         "name_tags",
@@ -29,60 +47,50 @@ class ChecksAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "kind", "last_ping", "last_start")
 
-    actions = ["send_alert"]
-
-    def get_queryset(self, request):
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Check]:
         qs = super().get_queryset(request)
-        qs = qs.annotate(email=F("project__owner__email"))
-        qs = qs.annotate(project_name=F("project__name"))
+        qs = qs.annotate(owner_email=F("project__owner__email"))
         return qs
 
-    @mark_safe
-    def project_(self, obj):
-        url = reverse("hc-checks", args=[obj.project.code])
-        name = escape(obj.project_name or "Default")
-        email = escape(obj.email)
-        return f'{email} &rsaquo; <a href="{url}"">{name}</a>'
+    def project_(self, obj: WithAnnotations[Check, CheckAnnotations]) -> str:
+        url = obj.project.get_absolute_url()
+        name = obj.project.name or "Default"
+        return format_html(
+            """{} &rsaquo; <a href="{}">{}</a>""", obj.owner_email, url, name
+        )
 
-    @mark_safe
-    def name_tags(self, obj):
-        url = reverse("hc-details", args=[obj.code])
-        name = escape(obj.name or "unnamed")
-
-        s = f'<a href="{url}"">{name}</a>'
+    def name_tags(self, obj: Check) -> str:
+        url = obj.details_url(full=False)
+        name = obj.name or "unnamed"
+        tmpl = """<a href="{}"">{}</a>"""
+        args = [url, name]
         for tag in obj.tags_list():
-            s += " <span>%s</span>" % escape(tag)
+            tmpl += " <span>{}</span>"
+            args.append(tag)
+        return format_html(tmpl, *args)
 
-        return s
-
-    def timeout_schedule(self, obj):
+    @admin.display(description="Schedule")
+    def timeout_schedule(self, obj: Check) -> str:
         if obj.kind == "simple":
             return format_duration(obj.timeout)
-        elif obj.kind == "cron":
+        elif obj.kind in ("cron", "oncalendar"):
+            if len(obj.schedule) > 30:
+                return obj.schedule[:30] + "..."
             return obj.schedule
         else:
             return "Unknown"
-
-    timeout_schedule.short_description = "Schedule"
-
-    def send_alert(self, request, qs):
-        for check in qs:
-            for channel in check.channel_set.all():
-                channel.notify(check)
-
-        self.message_user(request, "%d alert(s) sent" % qs.count())
-
-    send_alert.short_description = "Send Alert"
 
 
 class SchemeListFilter(admin.SimpleListFilter):
     title = "Scheme"
     parameter_name = "scheme"
 
-    def lookups(self, request, model_admin):
+    def lookups(self, request: HttpRequest, model_admin: ModelAdmin[Check]) -> Lookups:
         return (("http", "HTTP"), ("https", "HTTPS"), ("email", "Email"))
 
-    def queryset(self, request, queryset):
+    def queryset(
+        self, request: HttpRequest, queryset: QuerySet[Ping]
+    ) -> QuerySet[Ping]:
         if self.value():
             queryset = queryset.filter(scheme=self.value())
         return queryset
@@ -93,13 +101,13 @@ class MethodListFilter(admin.SimpleListFilter):
     parameter_name = "method"
     methods = ["HEAD", "GET", "POST", "PUT", "DELETE"]
 
-    def lookups(self, request, model_admin):
+    def lookups(self, request: HttpRequest, model_admin: ModelAdmin[Ping]) -> Lookups:
         return zip(self.methods, self.methods)
 
-    def queryset(self, request, queryset):
+    def queryset(self, request: HttpRequest, qs: QuerySet[Ping]) -> QuerySet[Ping]:
         if self.value():
-            queryset = queryset.filter(method=self.value())
-        return queryset
+            qs = qs.filter(method=self.value())
+        return qs
 
 
 class KindListFilter(admin.SimpleListFilter):
@@ -107,135 +115,211 @@ class KindListFilter(admin.SimpleListFilter):
     parameter_name = "kind"
     kinds = ["start", "fail"]
 
-    def lookups(self, request, model_admin):
+    def lookups(self, request: HttpRequest, model_admin: ModelAdmin[Ping]) -> Lookups:
         return zip(self.kinds, self.kinds)
 
-    def queryset(self, request, queryset):
+    def queryset(self, request: HttpRequest, qs: QuerySet[Ping]) -> QuerySet[Ping]:
         if self.value():
-            queryset = queryset.filter(kind=self.value())
-        return queryset
+            qs = qs.filter(kind=self.value())
+        return qs
 
 
-# Adapted from: https://djangosnippets.org/snippets/2593/
-class LargeTablePaginator(Paginator):
-    """ Overrides the count method to get an estimate instead of actual count
-    when not filtered
-    """
-
-    def _get_estimate(self):
-        try:
-            cursor = connection.cursor()
-            cursor.execute(
-                "SELECT reltuples FROM pg_class WHERE relname = %s",
-                [self.object_list.query.model._meta.db_table],
-            )
-            return int(cursor.fetchone()[0])
-        except:
-            return 0
-
-    def _get_count(self):
-        """
-        Changed to use an estimate if the estimate is greater than 10,000
-        Returns the total number of objects, across all pages.
-        """
-        if not hasattr(self, "_count") or self._count is None:
-            try:
-                estimate = 0
-                if not self.object_list.query.where:
-                    estimate = self._get_estimate()
-                if estimate < 10000:
-                    self._count = self.object_list.count()
-                else:
-                    self._count = estimate
-            except (AttributeError, TypeError):
-                # AttributeError if object_list has no count() method.
-                # TypeError if object_list.count() requires arguments
-                # (i.e. is of type list).
-                self._count = len(self.object_list)
-        return self._count
-
-    count = property(_get_count)
+class PingsPaginator(Paginator[Ping]):
+    count = 1000
+    page_range = range(1, 10)
 
 
 @admin.register(Ping)
-class PingsAdmin(admin.ModelAdmin):
-    search_fields = ("owner__name", "owner__code")
-    readonly_fields = ("owner",)
+class PingsAdmin(ModelAdmin[Ping]):
+    readonly_fields = ("owner", "has_body")
     list_select_related = ("owner",)
-    list_display = ("id", "created", "owner", "scheme", "method", "ua")
+    list_display = ("id", "created", "owner", "scheme", "method", "object_size", "ua")
     list_filter = ("created", SchemeListFilter, MethodListFilter, KindListFilter)
+    exclude = ("body",)
 
-    paginator = LargeTablePaginator
+    paginator = PingsPaginator
     show_full_result_count = False
 
 
+class LastNotifyDurationFilter(admin.SimpleListFilter):
+    title = "last notify duration"
+
+    parameter_name = "last_notify_duration"
+
+    def lookups(self, r: HttpRequest, model_admin: ModelAdmin[Channel]) -> Lookups:
+        return (
+            ("1", "More than 1s"),
+            ("6", "More than 6s"),
+            ("10", "More than 10s"),
+        )
+
+    def queryset(self, r: HttpRequest, qs: QuerySet[Channel]) -> QuerySet[Channel]:
+        v = self.value()
+        if v:
+            seconds = float(v)
+            qs = qs.filter(last_notify_duration__gt=td(seconds=seconds))
+
+        return qs
+
+
+class LastErrorFilter(admin.SimpleListFilter):
+    title = "last error"
+
+    parameter_name = "status"
+
+    def lookups(self, r: HttpRequest, model_admin: ModelAdmin[Channel]) -> Lookups:
+        return (
+            ("ok", "No Error"),
+            ("error", "Error"),
+        )
+
+    def queryset(self, r: HttpRequest, qs: QuerySet[Channel]) -> QuerySet[Channel]:
+        v = self.value()
+        if v == "ok":
+            qs = qs.filter(last_error="")
+        elif v == "error":
+            qs = qs.exclude(last_error="")
+
+        return qs
+
+
+class ChannelAnnotations(TypedDict):
+    project_code: UUID
+    project_name: str
+    owner_email: str
+
+
 @admin.register(Channel)
-class ChannelsAdmin(admin.ModelAdmin):
+class ChannelsAdmin(ModelAdmin[Channel]):
     class Media:
         css = {"all": ("css/admin/channels.css",)}
 
-    search_fields = ["value", "project__owner__email"]
+    search_fields = ["value", "project__owner__email", "name", "code"]
+    readonly_fields = ("code",)
     list_display = (
         "id",
-        "kind_",
+        "transport",
         "name",
         "project_",
-        "value",
-        "num_notifications",
+        "created_",
+        "chopped_value",
+        "last",
+        "status",
+        "time",
     )
-    list_filter = ("kind",)
+    list_filter = ("kind", LastNotifyDurationFilter, LastErrorFilter, "disabled")
     raw_id_fields = ("project", "checks")
+    actions = ["disable"]
 
-    @mark_safe
-    def project_(self, obj):
-        url = reverse("hc-checks", args=[obj.project_code])
-        name = escape(obj.project_name or "Default")
-        email = escape(obj.email)
-        return f"{email} &rsaquo; <a href='{url}'>{name}</a>"
+    def created_(self, obj: Channel) -> date:
+        return obj.created.date()
 
-    def get_queryset(self, request):
+    def project_(self, obj: WithAnnotations[Channel, ChannelAnnotations]) -> str:
+        tmpl = """{} &rsaquo; <a href="{}">{}</a>"""
+        url = self.view_on_site(obj)
+        name = obj.project_name or "Default"
+        return format_html(tmpl, obj.owner_email, url, name)
+
+    def time(self, obj: Channel) -> str | None:
+        if obj.last_notify_duration:
+            return "%.1f" % obj.last_notify_duration.total_seconds()
+        return None
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Channel]:
         qs = super().get_queryset(request)
-        qs = qs.annotate(Count("notification", distinct=True))
         qs = qs.annotate(project_code=F("project__code"))
         qs = qs.annotate(project_name=F("project__name"))
-        qs = qs.annotate(email=F("project__owner__email"))
+        qs = qs.annotate(owner_email=F("project__owner__email"))
         return qs
 
+    def view_on_site(self, obj: Channel) -> str:
+        assert hasattr(obj, "project_code")
+        return reverse("hc-channels", args=[obj.project_code])
+
+    def transport(self, obj: Channel) -> str:
+        tmpl = """<span class="ic-{}"></span> &nbsp; {}{}"""
+        note = ""
+        if obj.kind == "email" and not obj.email_verified:
+            note = " (not verified)"
+        return format_html(tmpl, obj.kind, obj.kind, note)
+
+    @admin.display(description="Value")
+    def chopped_value(self, obj: Channel) -> str:
+        if len(obj.value) > 100:
+            return "%s…" % obj.value[:100]
+
+        return obj.value
+
+    def last(self, obj: Channel) -> date | None:
+        return obj.last_notify.date() if obj.last_notify else None
+
     @mark_safe
-    def kind_(self, obj):
-        return f'<span class="icon-{ obj.kind }"></span> &nbsp; {obj.kind}'
+    def status(self, obj: Channel) -> str:
+        if obj.disabled:
+            return "<span class='d'>Disabled</span>"
+        if obj.last_error:
+            return "<span class='e'>Error</span>"
+        if obj.last_notify:
+            return "OK"
+        return "-"
 
-    def num_notifications(self, obj):
-        return obj.notification__count
+    def disable(self, request: HttpRequest, qs: QuerySet[Check]) -> None:
+        num_disabled = qs.update(disabled=True)
+        self.message_user(request, f"Disabled {num_disabled} channel(s)")
 
-    num_notifications.short_description = "# Notifications"
+
+class ErrorFilter(admin.SimpleListFilter):
+    title = "error"
+    parameter_name = "status"
+
+    def lookups(self, r: HttpRequest, model_admin: ModelAdmin[Notification]) -> Lookups:
+        return (
+            ("ok", "OK"),
+            ("error", "Error"),
+        )
+
+    def queryset(
+        self, r: HttpRequest, qs: QuerySet[Notification]
+    ) -> QuerySet[Notification]:
+        v = self.value()
+        if v == "ok":
+            qs = qs.filter(error="")
+        elif v == "error":
+            qs = qs.exclude(error="")
+
+        return qs
 
 
 @admin.register(Notification)
-class NotificationsAdmin(admin.ModelAdmin):
-    search_fields = ["owner__name", "owner__code", "channel__value"]
-    readonly_fields = ("owner",)
-    list_select_related = ("owner", "channel")
+class NotificationsAdmin(ModelAdmin[Notification]):
+    class Media:
+        css = {"all": ("css/admin/notifications.css",)}
+
+    search_fields = ["owner__name", "owner__code", "channel__value", "error", "code"]
+    readonly_fields = ("owner", "code")
+    list_select_related = ("channel", "channel__project", "channel__project__owner")
     list_display = (
         "id",
         "created",
+        "channel__kind",
         "check_status",
-        "owner",
-        "channel_kind",
+        "project",
         "channel_value",
         "error",
     )
-    list_filter = ("created", "check_status", "channel__kind")
+    list_filter = ("channel__kind", "created", ErrorFilter)
     raw_id_fields = ("channel",)
 
-    def channel_kind(self, obj):
-        return obj.channel.kind
+    def channel_value(self, obj: Notification) -> str:
+        return format_html("<div>{}</div>", obj.channel.value)
 
-    def channel_value(self, obj):
-        return obj.channel.value
+    def project(self, obj: Notification) -> str:
+        url = reverse("hc-channels", args=[obj.channel.project.code])
+        name = obj.channel.project
+        return format_html("""<div><a href="{}">{}</a></div>""", url, name)
 
 
 @admin.register(Flip)
-class FlipsAdmin(admin.ModelAdmin):
+class FlipsAdmin(ModelAdmin[Flip]):
     list_display = ("id", "created", "processed", "owner", "old_status", "new_status")
     raw_id_fields = ("owner",)

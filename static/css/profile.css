@@ -1,6 +1,6 @@
 .panel-success .panel-footer {
-    background: #dff0d8;
-    color: #3c763d;
+    background: var(--panel-success-bg);
+    color: var(--alert-success-color);
     font-size: small;
     text-align: center;
     border-top: 0;
@@ -8,8 +8,8 @@
 }
 
 .panel-info .panel-footer {
-    background: #d9edf7;
-    color: #31708f;
+    background: var(--state-info-bg);
+    color: var(--state-info-color);
     font-size: small;
     text-align: center;
     border-top: 0;
@@ -40,6 +40,7 @@ span.loading {
 
 .at-limit span {
     display: inline-block;
+    color: #333;
     background-color: #FFD54F;
     font-weight: bold;
     font-size: 12px;
@@ -62,3 +63,29 @@ span.loading {
   text-overflow: ellipsis;
 }
 
+#my-keys th {
+    border-top: 0;
+}
+
+#my-keys .missing {
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+.settings-bar {
+    line-height: 34px;
+}
+
+.add-totp-step {
+    margin-top: 32px;
+}
+
+code.totp-secret {
+    display: block;
+    padding: 4px 0;
+    font-size: 18px;
+}
+
+#email-reports .selectize-control {
+    max-width: 300px;
+}
