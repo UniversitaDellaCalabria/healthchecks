@@ -122,19 +122,6 @@ MIDDLEWARE = [
     "hc.accounts.middleware.TeamAccessMiddleware",
 ]
 
-MIDDLEWARE.append('djangosaml2.middleware.SamlSessionMiddleware')
-
-if 'saml2_sp' in INSTALLED_APPS or 'djangosaml2' in INSTALLED_APPS:
-    from saml2_sp.pysaml2 import *
-    AUTHENTICATION_BACKENDS = (
-        'django.contrib.auth.backends.ModelBackend',
-        'djangosaml2.backends.Saml2Backend')
-    LOGIN_URL = '/saml2/login'
-else:
-    AUTHENTICATION_BACKENDS = (
-        "hc.accounts.backends.EmailBackend",
-        "hc.accounts.backends.ProfileBackend")
-
 if envbool("USE_GZIP_MIDDLEWARE", "False"):
     MIDDLEWARE.append("django.middleware.gzip.GZipMiddleware")
 
@@ -429,3 +416,17 @@ ZULIP_ENABLED = envbool("ZULIP_ENABLED", "True")
 
 # Read additional configuration from hc/local_settings.py if it exists
 from .local_settings import *  # noqa: F403
+
+# saml2
+MIDDLEWARE.append('djangosaml2.middleware.SamlSessionMiddleware')
+
+if 'saml2_sp' in INSTALLED_APPS or 'djangosaml2' in INSTALLED_APPS:
+    from saml2_sp.pysaml2 import *
+    AUTHENTICATION_BACKENDS = (
+        'django.contrib.auth.backends.ModelBackend',
+        'djangosaml2.backends.Saml2Backend')
+    LOGIN_URL = '/saml2/login'
+else:
+    AUTHENTICATION_BACKENDS = (
+        "hc.accounts.backends.EmailBackend",
+        "hc.accounts.backends.ProfileBackend")
