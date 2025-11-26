@@ -13,7 +13,7 @@ urlpatterns = [
     # ~ path("accounts/login/", views.login, name="hc-login"),
     # ~ path("accounts/login/two_factor/", views.login_webauthn, name="hc-login-webauthn"),
     # ~ path("accounts/login/two_factor/totp/", views.login_totp, name="hc-login-totp"),
-    # ~ path("accounts/logout/", views.logout, name="hc-logout"),
+    path("accounts/logout/", views.logout, name="hc-logout"),
     # ~ path("accounts/signup/csrf/", views.signup_csrf),
     # ~ path("accounts/signup/", views.signup, name="hc-signup"),
     # ~ path("accounts/login_link_sent/", views.login_link_sent, name="hc-login-link-sent"),
@@ -22,7 +22,7 @@ urlpatterns = [
         # ~ views.check_token,
         # ~ name="hc-check-token",
     # ~ ),
-    # ~ path("accounts/profile/", views.profile, name="hc-profile"),
+    # path("accounts/profile/", views.profile, name="hc-profile"),
     # ~ path("accounts/profile/appearance/", views.appearance, name="hc-appearance"),
     # ~ path(
         # ~ "accounts/profile/notifications/", views.notifications, name="hc-notifications"

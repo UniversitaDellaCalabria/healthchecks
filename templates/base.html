@@ -170,10 +170,11 @@
                         {% endif %}
 
                     <li class="dropdown-header">{{ request.user.email }}</li>
-
+                    {% comment %}
                     <li>
                         <a href="{% url 'hc-profile' %}">Account Settings</a>
                     </li>
+                    {% endcomment %}
                     <li>
                         <form method="post" action="{% url 'hc-logout' %}">
                             {% csrf_token %}
