@@ -383,7 +383,7 @@ def _get_project_summary(profile: Profile) -> dict[UUID, ProjectStatus]:
 
 def index(request: HttpRequest) -> HttpResponse:
     if not request.user.is_authenticated:
-        return redirect("hc-login")
+        return redirect(settings.LOGIN_URL)
 
     # We now know user is logged, tell the type checker request.profile exists-
     request = cast(AuthenticatedHttpRequest, request)

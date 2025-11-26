@@ -13,8 +13,8 @@ if _path := urlparse(settings.SITE_ROOT).path.lstrip("/"):
     prefix = f"{_path}/"
 
 urlpatterns = [
-    path(f"{prefix}admin/login/", accounts_views.login),
-    path(f"{prefix}admin/", admin.site.urls),
+    # ~ path(f"{prefix}admin/login/", accounts_views.login),
+    path(f"{settings.ADMIN_PATH}/", admin.site.urls),
     path(prefix, include("hc.accounts.urls")),
     path(prefix, include("hc.api.urls")),
     path(prefix, include("hc.front.urls")),
