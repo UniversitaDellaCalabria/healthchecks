@@ -1,7 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v3.12-dev - Unreleased
+## v3.13-dev - Unreleased
+
+### Improvements
+- Add new content filtering options in the "Filtering Rules" dialog (#1130, #954)
+- Fix the email integration's unsub view to disable (not delete) the channel
+- Add support for _FILE environment variables (#1184)
+
+## v3.12 - 2025-11-26
 
 ### Improvements
 - Add rate limiting and a default ntfy.sh token support for ntfy notifications
@@ -11,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - Add a tooltip with timestamp in the checks table, "Last Ping" column (#1040)
 - Update the Zulip transport to allow addressing users by User ID (#771)
 - Add hc_check_grace and hc_check_paused Prometheus metrics (#897, #915)
+- Update Docker base image to python:3.13.9-slim-trixie (#1233)
 
 ### Bug Fixes
 - Fix cron schedule formatting in Discord notifications

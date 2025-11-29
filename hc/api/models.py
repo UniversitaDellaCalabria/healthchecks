@@ -131,6 +131,8 @@ class CheckDict(TypedDict, total=False):
     failure_kw: str
     filter_subject: bool
     filter_body: bool
+    filter_http_body: bool
+    filter_default_fail: bool
     badge_url: str
     last_duration: int
     unique_key: str
@@ -198,6 +200,8 @@ class Check(models.Model):
     tz = models.CharField(max_length=36, default="UTC")
     filter_subject = models.BooleanField(default=False)
     filter_body = models.BooleanField(default=False)
+    filter_http_body = models.BooleanField(default=False)
+    filter_default_fail = models.BooleanField(default=False)
     start_kw = models.CharField(max_length=200, blank=True)
     success_kw = models.CharField(max_length=200, blank=True)
     failure_kw = models.CharField(max_length=200, blank=True)
@@ -407,6 +411,9 @@ class Check(models.Model):
         code_half = self.code.hex[:16]
         return hashlib.sha1(code_half.encode()).hexdigest()
 
+    def filter_any(self) -> bool:
+        return self.filter_subject or self.filter_body or self.filter_http_body
+
     def to_dict(self, *, readonly: bool = False, v: int = 3) -> CheckDict:
         with_started = v == 1
         result: CheckDict = {
@@ -429,6 +436,8 @@ class Check(models.Model):
             "failure_kw": self.failure_kw,
             "filter_subject": self.filter_subject,
             "filter_body": self.filter_body,
+            "filter_http_body": self.filter_http_body,
+            "filter_default_fail": self.filter_default_fail,
             # Optimization: construct badge URLs manually instead of using reverse().
             # This is significantly quicker when returning hundreds of checks.
             "badge_url": f"{settings.SITE_ROOT}/b/2/{self.badge_key}.svg",

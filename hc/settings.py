@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 from urllib.parse import urlparse
 
 import django_stubs_ext
@@ -36,7 +36,37 @@ def envint(s: str, default: str) -> int | None:
     return int(v)
 
 
-SECRET_KEY = os.getenv("SECRET_KEY", "---")
+@overload
+def envsecret(s: str) -> str | None:
+    ...
+
+
+@overload
+def envsecret(s: str, default: str) -> str:
+    ...
+
+
+def envsecret(s: str, default: str | None = None) -> str | None:
+    """Load a secret from an environment variable or from the filesystem.
+
+    This function either reads the secret from a file (if s + "_FILE" environment
+    variable has a non-empty value), or calls os.getenv().
+
+    """
+
+    if secret_path := os.getenv(s + "_FILE"):
+        p = Path(secret_path)
+        if not p.is_file():
+            # If the _FILE env var has a non-empty value then the value *must*
+            # be a path to a readable file. If we cannot access the file then we
+            # fail loudly
+            raise Exception(f"Error reading {s}_FILE ({secret_path})")
+        return p.read_text().strip()
+
+    return os.getenv(s, default)
+
+
+SECRET_KEY = envsecret("SECRET_KEY", "---")
 METRICS_KEY = os.getenv("METRICS_KEY")
 DEBUG = envbool("DEBUG", "True")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "healthchecks@example.org")
@@ -199,7 +229,7 @@ if os.getenv("DB") == "postgres":
             "PORT": os.getenv("DB_PORT", ""),
             "NAME": os.getenv("DB_NAME", "hc"),
             "USER": os.getenv("DB_USER", "postgres"),
-            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "PASSWORD": envsecret("DB_PASSWORD", ""),
             "CONN_MAX_AGE": envint("DB_CONN_MAX_AGE", "0"),
             "TEST": {"CHARSET": "UTF8"},
             "OPTIONS": {
@@ -220,7 +250,7 @@ if os.getenv("DB") in ["mysql", "mariadb"]:
             "PORT": os.getenv("DB_PORT", ""),
             "NAME": os.getenv("DB_NAME", "hc"),
             "USER": os.getenv("DB_USER", "root"),
-            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "PASSWORD": envsecret("DB_PASSWORD", ""),
             "TEST": {"CHARSET": "UTF8"},
         }
     }
@@ -292,7 +322,7 @@ WHITENOISE_IMMUTABLE_FILE_TEST = immutable_file_test
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = envint("EMAIL_PORT", "587")
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_HOST_PASSWORD = envsecret("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = envbool("EMAIL_USE_TLS", "True")
 EMAIL_USE_SSL = envbool("EMAIL_USE_SSL", "False")
 EMAIL_USE_VERIFICATION = envbool("EMAIL_USE_VERIFICATION", "True")
@@ -304,7 +334,7 @@ RP_ID = os.getenv("RP_ID")
 # Object storage credentials for storing large ping bodies.
 # (Optional. If not specified, will store ping bodies in the database.)
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+S3_SECRET_KEY = envsecret("S3_SECRET_KEY")
 S3_ENDPOINT = os.getenv("S3_ENDPOINT")
 S3_REGION = os.getenv("S3_REGION")
 S3_BUCKET = os.getenv("S3_BUCKET")
@@ -322,22 +352,18 @@ APPRISE_ENABLED = envbool("APPRISE_ENABLED", "False")
 
 # Discord integration
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
-DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+DISCORD_CLIENT_SECRET = envsecret("DISCORD_CLIENT_SECRET")
 
 # GitHub Issues
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
-GITHUB_PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY")
+GITHUB_CLIENT_SECRET = envsecret("GITHUB_CLIENT_SECRET")
+GITHUB_PRIVATE_KEY = envsecret("GITHUB_PRIVATE_KEY")
 GITHUB_PUBLIC_LINK = os.getenv("GITHUB_PUBLIC_LINK")
-
-# LINE Notify
-LINENOTIFY_CLIENT_ID = os.getenv("LINENOTIFY_CLIENT_ID")
-LINENOTIFY_CLIENT_SECRET = os.getenv("LINENOTIFY_CLIENT_SECRET")
 
 # Matrix
 MATRIX_HOMESERVER = os.getenv("MATRIX_HOMESERVER")
 MATRIX_USER_ID = os.getenv("MATRIX_USER_ID")
-MATRIX_ACCESS_TOKEN = os.getenv("MATRIX_ACCESS_TOKEN")
+MATRIX_ACCESS_TOKEN = envsecret("MATRIX_ACCESS_TOKEN")
 
 # Mattermost
 MATTERMOST_ENABLED = envbool("MATTERMOST_ENABLED", "True")
@@ -346,7 +372,7 @@ MATTERMOST_ENABLED = envbool("MATTERMOST_ENABLED", "True")
 MSTEAMS_ENABLED = envbool("MSTEAMS_ENABLED", "True")
 
 # ntfy.sh
-NTFY_SH_TOKEN = os.getenv("NTFY_SH_TOKEN")
+NTFY_SH_TOKEN = envsecret("NTFY_SH_TOKEN")
 
 # Opsgenie
 OPSGENIE_ENABLED = envbool("OPSGENIE_ENABLED", "True")
@@ -362,14 +388,14 @@ PD_APP_ID = os.getenv("PD_APP_ID")
 PROMETHEUS_ENABLED = envbool("PROMETHEUS_ENABLED", "True")
 
 # Pushover integration
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+PUSHOVER_API_TOKEN = envsecret("PUSHOVER_API_TOKEN")
 PUSHOVER_SUBSCRIPTION_URL = os.getenv("PUSHOVER_SUBSCRIPTION_URL")
 PUSHOVER_EMERGENCY_RETRY_DELAY = int(os.getenv("PUSHOVER_EMERGENCY_RETRY_DELAY", "300"))
 PUSHOVER_EMERGENCY_EXPIRATION = int(os.getenv("PUSHOVER_EMERGENCY_EXPIRATION", "86400"))
 
 # Pushbullet integration
 PUSHBULLET_CLIENT_ID = os.getenv("PUSHBULLET_CLIENT_ID")
-PUSHBULLET_CLIENT_SECRET = os.getenv("PUSHBULLET_CLIENT_SECRET")
+PUSHBULLET_CLIENT_SECRET = envsecret("PUSHBULLET_CLIENT_SECRET")
 
 # Rocket.Chat
 ROCKETCHAT_ENABLED = envbool("ROCKETCHAT_ENABLED", "True")
@@ -382,7 +408,7 @@ SIGNAL_CLI_SOCKET = os.getenv("SIGNAL_CLI_SOCKET")
 
 # Slack integration
 SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
-SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
+SLACK_CLIENT_SECRET = envsecret("SLACK_CLIENT_SECRET")
 SLACK_ENABLED = envbool("SLACK_ENABLED", "True")
 
 # Spike.sh
@@ -390,11 +416,11 @@ SPIKE_ENABLED = envbool("SPIKE_ENABLED", "True")
 
 # Telegram integration -- override in local_settings.py
 TELEGRAM_BOT_NAME = os.getenv("TELEGRAM_BOT_NAME", "ExampleBot")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = envsecret("TELEGRAM_TOKEN")
 
 # SMS and WhatsApp (Twilio) integration
 TWILIO_ACCOUNT = os.getenv("TWILIO_ACCOUNT")
-TWILIO_AUTH = os.getenv("TWILIO_AUTH")
+TWILIO_AUTH = envsecret("TWILIO_AUTH")
 TWILIO_FROM = os.getenv("TWILIO_FROM")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID")
 TWILIO_USE_WHATSAPP = envbool("TWILIO_USE_WHATSAPP", "False")
@@ -402,7 +428,7 @@ WHATSAPP_DOWN_CONTENT_SID = os.getenv("WHATSAPP_DOWN_CONTENT_SID")
 WHATSAPP_UP_CONTENT_SID = os.getenv("WHATSAPP_UP_CONTENT_SID")
 
 # Trello (https://trello.com/app-key)
-TRELLO_APP_KEY = os.getenv("TRELLO_APP_KEY")
+TRELLO_APP_KEY = envsecret("TRELLO_APP_KEY")
 
 # VictorOps
 VICTOROPS_ENABLED = envbool("VICTOROPS_ENABLED", "True")

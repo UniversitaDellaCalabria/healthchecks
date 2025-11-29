@@ -37,7 +37,7 @@ from hc.api.forms import FlipsFiltersForm
 from hc.api.models import MAX_DURATION, Channel, Check, Flip, Notification, Ping
 from hc.lib.badges import check_signature, get_badge_svg, get_badge_url
 from hc.lib.signing import unsign_bounce_id
-from hc.lib.string import is_valid_uuid_string
+from hc.lib.string import is_valid_uuid_string, match_keywords
 from hc.lib.tz import all_timezones, legacy_timezones
 from oncalendar import OnCalendar, OnCalendarError
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -61,8 +61,10 @@ class Spec(BaseModel):
     channels: str | None = None
     desc: str | None = None
     failure_kw: str | None = Field(None, max_length=200)
-    filter_body: bool | None = None
     filter_subject: bool | None = None
+    filter_body: bool | None = None
+    filter_http_body: bool | None = None
+    filter_default_fail: bool | None = None
     grace: td | None = Field(None, ge=60, le=31536000)
     manual_resume: bool | None = None
     methods: Literal["", "POST"] | None = None
@@ -212,6 +214,19 @@ def ping(
 
     if check.methods == "POST" and method != "POST":
         action = "ign"
+
+    if action != "ign" and check.filter_http_body:
+        body_text = body.decode()
+        if check.failure_kw and match_keywords(body_text, check.failure_kw):
+            action = "fail"
+        elif check.success_kw and match_keywords(body_text, check.success_kw):
+            action = "success"
+        elif check.start_kw and match_keywords(body_text, check.start_kw):
+            action = "start"
+        elif check.filter_default_fail:
+            action = "fail"
+        else:
+            action = "ign"
 
     rid, rid_str = None, request.GET.get("rid")
     if rid_str is not None:
@@ -364,6 +379,8 @@ def _update(check: Check, spec: Spec, v: int) -> None:
         "failure_kw",
         "filter_subject",
         "filter_body",
+        "filter_http_body",
+        "filter_default_fail",
         "grace",
     ):
         v = getattr(spec, key)
