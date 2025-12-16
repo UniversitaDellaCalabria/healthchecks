@@ -521,7 +521,8 @@ class Check(models.Model):
                     self.status = new_status
 
             self.alert_after = self.going_down_after()
-            self.n_pings = models.F("n_pings") + 1
+            # ~ self.n_pings = models.F("n_pings") + 1
+            self.n_pings += 1
             body_lowercase = body.decode(errors="replace").lower()
             self.has_confirmation_link = "confirm" in body_lowercase
             self.save()
