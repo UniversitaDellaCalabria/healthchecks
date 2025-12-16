@@ -597,7 +597,8 @@ def pings(request: ApiRequest, code: UUID) -> HttpResponse:
     # There might be more pings in the database (depends on how pruning is handled)
     # but we will not return more than the limit allows.
     profile = Profile.objects.get(user__project=request.project)
-    limit = profile.ping_log_limit
+    # Cap the number of returned pings to 1000.
+    limit = min(profile.ping_log_limit, 1000)
 
     # Query in descending order so we're sure to get the most recent
     # pings, regardless of the limit restriction
@@ -627,7 +628,10 @@ def pings(request: ApiRequest, code: UUID) -> HttpResponse:
         for ping in pings:
             ping.duration = None
 
-    return JsonResponse({"pings": [p.to_dict() for p in pings]})
+    # Pass check's code to Ping.to_dict(), so it does not need to look it up
+    # (which would result in a database query)
+    ping_dicts = [p.to_dict(owner_code=check.code, v=request.v) for p in pings]
+    return JsonResponse({"pings": ping_dicts})
 
 
 @cors("GET")
@@ -866,7 +870,7 @@ def metrics(request: HttpRequest) -> HttpResponse:
     if not settings.METRICS_KEY:
         return HttpResponseForbidden()
 
-    key = request.META.get("HTTP_X_METRICS_KEY")
+    key = request.headers.get("X-Metrics-Key")
     if key != settings.METRICS_KEY:
         return HttpResponseForbidden()
 

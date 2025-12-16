@@ -13,8 +13,8 @@ team management features: projects, team members, read-only access.
 
 The building blocks are:
 
-* Python 3.10+
-* Django 5.2
+* Python 3.12+
+* Django 6.0
 * PostgreSQL, MySQL or MariaDB
 
 Healthchecks is licensed under the BSD 3-clause license.
@@ -299,10 +299,6 @@ standard. To enable WebAuthn support, set the `RP_ID` (relying party identifier 
 setting to a non-null value. Set its value to your site's domain without scheme
 and without port. For example, if your site runs on `https://my-hc.example.org`,
 set `RP_ID` to `my-hc.example.org`.
-
-Note that WebAuthn requires HTTPS, even if running on localhost. To test WebAuthn
-locally with a self-signed certificate, you can use the `runsslserver` command
-from the `django-sslserver` package.
 
 ## External Authentication
 

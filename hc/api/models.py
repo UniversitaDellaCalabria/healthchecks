@@ -9,7 +9,7 @@ from datetime import datetime
 from datetime import timedelta as td
 from datetime import timezone
 from importlib import import_module
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 from cronsim import CronSim
@@ -110,8 +110,8 @@ def isostring(dt: datetime | None) -> str | None:
     return dt.replace(microsecond=0).isoformat() if dt else None
 
 
-class CheckDict(TypedDict, total=False):
-    uuid: str | None
+class CheckDict(TypedDict):
+    uuid: NotRequired[str]
     name: str
     slug: str
     tags: str
@@ -134,16 +134,16 @@ class CheckDict(TypedDict, total=False):
     filter_http_body: bool
     filter_default_fail: bool
     badge_url: str
-    last_duration: int
-    unique_key: str
-    ping_url: str
-    update_url: str
-    pause_url: str
-    resume_url: str
-    channels: str
-    timeout: int
-    schedule: str
-    tz: str
+    last_duration: NotRequired[int]
+    unique_key: NotRequired[str]
+    ping_url: NotRequired[str]
+    update_url: NotRequired[str]
+    pause_url: NotRequired[str]
+    resume_url: NotRequired[str]
+    channels: NotRequired[str]
+    timeout: NotRequired[int]
+    schedule: NotRequired[str]
+    tz: NotRequired[str]
 
 
 @dataclass
@@ -525,7 +525,6 @@ class Check(models.Model):
             body_lowercase = body.decode(errors="replace").lower()
             self.has_confirmation_link = "confirm" in body_lowercase
             self.save()
-            self.refresh_from_db()
 
             ping = Ping(owner=self)
             ping.n = self.n_pings
@@ -655,7 +654,7 @@ class Check(models.Model):
         flip.save()
 
 
-class PingDict(TypedDict, total=False):
+class PingDict(TypedDict):
     type: str
     date: str
     n: int | None
@@ -664,7 +663,7 @@ class PingDict(TypedDict, total=False):
     method: str
     ua: str
     rid: uuid.UUID | None
-    duration: float
+    duration: NotRequired[float]
     body_url: str | None
 
 
@@ -686,10 +685,14 @@ class Ping(models.Model):
     class GetBodyError(Exception):
         pass
 
-    def to_dict(self) -> PingDict:
+    def to_dict(self, owner_code: uuid.UUID, v: int) -> PingDict:
         if self.has_body():
-            args = [self.owner.code, self.n]
-            body_url = absolute_reverse("hc-api-ping-body", args=args)
+            # Optimization: construct API URLs manually instead of using reverse().
+            # This is significantly quicker when returning hundreds of pings.
+            body_url = (
+                f"{settings.SITE_ROOT}/api/v{v}/checks/{owner_code}/pings/{self.n}/body"
+            )
+
         else:
             body_url = None
 
@@ -707,7 +710,9 @@ class Ping(models.Model):
 
         duration = self.duration
         if duration is not None:
-            result["duration"] = duration.total_seconds()
+            # HTTP request timing is imprecise, so millisecond precision is not
+            # useful here, and just wastes bandwidth
+            result["duration"] = round(duration.total_seconds(), 2)
 
         return result
 

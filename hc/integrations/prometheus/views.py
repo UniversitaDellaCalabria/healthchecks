@@ -37,7 +37,7 @@ def add_prometheus(request: AuthenticatedHttpRequest, code: UUID) -> HttpRespons
 def metrics(request: HttpRequest, code: UUID, key: str | None = None) -> HttpResponse:
     if key is None:
         # If key was not in the URL, expect it in the Authorization request header
-        key = request.META.get("HTTP_AUTHORIZATION", "")
+        key = request.headers.get("Authorization", "")
         if not key.startswith("Bearer "):
             return HttpResponse(status=401)
 
@@ -51,6 +51,22 @@ def metrics(request: HttpRequest, code: UUID, key: str | None = None) -> HttpRes
         return HttpResponseForbidden()
 
     checks = Check.objects.filter(project_id=project.id).order_by("id")
+    # Only load the fields we will use. This results in ~50% request speedup
+    # for projects with hundreds of checks.
+    checks = checks.only(
+        "code",  # used in check.unique_key
+        "name",
+        "tags",
+        # the below fields are used in check.get_status():
+        "status",
+        "kind",
+        "timeout",
+        "grace",
+        "schedule",
+        "tz",
+        "last_start",
+        "last_ping",
+    )
 
     def esc(s: str) -> str:
         return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")

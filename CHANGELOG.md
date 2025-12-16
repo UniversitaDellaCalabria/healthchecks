@@ -1,12 +1,26 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v3.13-dev - Unreleased
+## v4.0-dev - Unreleased
+
+This release drops support of Python 3.11 and below. The minimum required Python
+version is 3.12.
+
+## Improvements
+- Upgrade to Django 6.0
+
+### Bug Fixes
+- Fix the text version of email report for recently created checks (#1236, @adelton)
+
+## v3.13 - 2025-11-30
 
 ### Improvements
 - Add new content filtering options in the "Filtering Rules" dialog (#1130, #954)
 - Fix the email integration's unsub view to disable (not delete) the channel
 - Add support for _FILE environment variables (#1184)
+
+### Bug Fixes
+- Pin minio in Dockerfile to a known good version (#1235)
 
 ## v3.12 - 2025-11-26
 
